@@ -154,6 +154,7 @@ def main():
     print("Welcome! Speak into your microphone, and I will respond.")
     print("Say 'exit' to quit or ask about your screen (e.g., 'How many icons are on my screen?').")
 
+
     # Initialize conversation history with a system message
     conversation_history = [
         {"role": "system", "content": "You are a helpful assistant that can analyze the user's screen and answer questions dynamically."}
