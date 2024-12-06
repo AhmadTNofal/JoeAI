@@ -1,9 +1,17 @@
 import openai
-import speech_recognition as sr
 import pyttsx3
+import pyautogui
+import pytesseract
+import cv2
+import numpy as np
+from PIL import Image
+import speech_recognition as sr
 
 # Set your OpenAI API key
 openai.api_key = "sk-tbtbdjXN0PNeKVX8x6oXJFABUkwYsEeOj9TinWn3jOT3BlbkFJuGto6skfATpazIFkDBnEr1JtKDe0ykgJkavseRQP0A"
+
+# Initialize text-to-speech engine
+engine = pyttsx3.init()
 
 def transcribe_speech(timeout=10):
     """
@@ -13,9 +21,8 @@ def transcribe_speech(timeout=10):
     :return: Transcribed text or None if no speech was detected.
     """
     recognizer = sr.Recognizer()
-
     try:
-        with sr.Microphone() as source:  # Use default microphone
+        with sr.Microphone() as source:
             print("Listening... Speak now.")
             audio = recognizer.listen(source, timeout=timeout)
             text = recognizer.recognize_google(audio)
@@ -34,6 +41,90 @@ def transcribe_speech(timeout=10):
         print(f"Unexpected error: {e}")
         return None
 
+def capture_screen():
+    """
+    Captures the entire screen and saves it as an image.
+    :return: PIL Image object of the screen.
+    """
+    screenshot = pyautogui.screenshot()
+    return screenshot
+
+def extract_text_from_image(image):
+    """
+    Extracts text from a given image using Tesseract OCR.
+    :param image: PIL Image object.
+    :return: Extracted text as a string.
+    """
+    try:
+        text = pytesseract.image_to_string(image)
+        return text.strip()
+    except Exception as e:
+        print(f"Error in text extraction: {e}")
+        return None
+
+def detect_objects(image):
+    """
+    Detects objects (like icons or windows) in the given image using OpenCV and YOLOv5.
+    :param image: PIL Image object.
+    :return: List of detected objects with labels.
+    """
+    # Convert PIL Image to NumPy array
+    image_np = np.array(image)
+
+    # Placeholder for object detection logic
+    # Here you could integrate YOLOv5, TensorFlow, or OpenCV pre-trained models
+    # For simplicity, we'll assume detection of "icons", "windows", and "taskbar"
+
+    # Mocked detected objects (replace this with real detection logic)
+    detected_objects = ["desktop icons", "taskbar", "open application window"]
+
+    return detected_objects
+
+def interpret_screen(conversation_history):
+    """
+    Captures the screen, extracts text, detects objects, and sends the data to GPT for interpretation.
+    :param conversation_history: List of messages forming the conversation.
+    """
+    print("Capturing screen...")
+
+    # Capture the screen
+    screen_image = capture_screen()
+
+    # Extract text from the captured image
+    print("Extracting text from the screen...")
+    screen_text = extract_text_from_image(screen_image)
+
+    # Detect objects in the screen
+    print("Detecting objects on the screen...")
+    detected_objects = detect_objects(screen_image)
+
+    # Generate a description of the screen
+    screen_description = "I see the following:\n"
+    if screen_text:
+        screen_description += f"- Extracted text: {screen_text}\n"
+    if detected_objects:
+        screen_description += f"- Detected objects: {', '.join(detected_objects)}\n"
+
+    print(f"Screen Description: {screen_description}")
+
+    # Generate a GPT prompt
+    prompt = f"Describe the screen based on the following details:\n{screen_description}"
+    print("Sending prompt to GPT...")
+
+    # Add screen context to conversation history
+    conversation_history.append({"role": "user", "content": prompt})
+
+    # Get GPT's response
+    gpt_response = get_gpt_response(conversation_history)
+    if gpt_response:
+        print(f"GPT-4 Response: {gpt_response}")
+        # Add GPT response to conversation history
+        conversation_history.append({"role": "assistant", "content": gpt_response})
+        # Speak the response
+        speak_text(gpt_response)
+    else:
+        print("Failed to get a response from GPT.")
+
 def get_gpt_response(conversation_history):
     """
     Sends the conversation history to GPT and gets a response.
@@ -42,7 +133,7 @@ def get_gpt_response(conversation_history):
     """
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-4o",
+            model="gpt-4",
             messages=conversation_history
         )
         return response['choices'][0]['message']['content']
@@ -52,18 +143,16 @@ def get_gpt_response(conversation_history):
 
 def speak_text(text, rate=200):
     """
-    Converts text to speech using pyttsx3 with adjustable rate.
+    Converts text to speech using pyttsx3.
     :param text: Text to convert to speech.
-    :param rate: Speech rate (default is 200 words per minute).
     """
-    engine = pyttsx3.init()
     engine.setProperty('rate', rate)  # Set the speech rate
     engine.say(text)
     engine.runAndWait()
 
 def main():
     print("Welcome! Speak into your microphone, and I will respond.")
-    print("Say 'exit' to quit.")
+    print("Say 'exit' to quit or 'view my screen' to analyze your screen.")
 
     # Initialize conversation history with a system message
     conversation_history = [
@@ -77,20 +166,22 @@ def main():
             if user_input.lower() == "exit":
                 print("Goodbye!")
                 break
-
-            # Add user input to conversation history
-            conversation_history.append({"role": "user", "content": user_input})
-
-            # Get GPT response
-            response = get_gpt_response(conversation_history)
-            if response:
-                print(f"GPT-4: {response}")
-                # Add GPT response to conversation history
-                conversation_history.append({"role": "assistant", "content": response})
-                # Speak the response
-                speak_text(response)
+            elif user_input.lower() == "view my screen":
+                interpret_screen(conversation_history)
             else:
-                print("Failed to get a response from GPT.")
+                # Add user input to conversation history
+                conversation_history.append({"role": "user", "content": user_input})
+
+                # Get GPT response
+                response = get_gpt_response(conversation_history)
+                if response:
+                    print(f"GPT-4: {response}")
+                    # Add GPT response to conversation history
+                    conversation_history.append({"role": "assistant", "content": response})
+                    # Speak the response
+                    speak_text(response)
+                else:
+                    print("Failed to get a response from GPT.")
         else:
             print("No input detected. Try again.")
 
