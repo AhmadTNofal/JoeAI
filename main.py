@@ -72,47 +72,47 @@ def detect_objects(image):
     image_np = np.array(image)
 
     # Placeholder for object detection logic
-    # Here you could integrate YOLOv5, TensorFlow, or OpenCV pre-trained models
-    # For simplicity, we'll assume detection of "icons", "windows", and "taskbar"
-
-    # Mocked detected objects (replace this with real detection logic)
-    detected_objects = ["desktop icons", "taskbar", "open application window"]
-
+    # Replace this with real detection logic using a pre-trained model
+    detected_objects = ["desktop icon", "desktop icon", "taskbar", "open application window"]
     return detected_objects
 
-def interpret_screen(conversation_history):
+def interpret_screen(user_command, conversation_history):
     """
-    Captures the screen, extracts text, detects objects, and sends the data to GPT for interpretation.
+    Captures the screen, extracts data, and interprets the screen dynamically based on the user's command.
+    :param user_command: The text command from the user.
     :param conversation_history: List of messages forming the conversation.
     """
     print("Capturing screen...")
-
-    # Capture the screen
     screen_image = capture_screen()
 
-    # Extract text from the captured image
+    # Extract text and detect objects on the screen
     print("Extracting text from the screen...")
     screen_text = extract_text_from_image(screen_image)
 
-    # Detect objects in the screen
     print("Detecting objects on the screen...")
     detected_objects = detect_objects(screen_image)
 
-    # Generate a description of the screen
-    screen_description = "I see the following:\n"
+    # Create a detailed screen description
+    screen_data = "Here is what I see on the screen:\n"
     if screen_text:
-        screen_description += f"- Extracted text: {screen_text}\n"
+        screen_data += f"- Extracted text: {screen_text}\n"
     if detected_objects:
-        screen_description += f"- Detected objects: {', '.join(detected_objects)}\n"
+        screen_data += f"- Detected objects: {', '.join(detected_objects)}\n"
 
-    print(f"Screen Description: {screen_description}")
+    print(f"Screen Data: {screen_data}")
 
-    # Generate a GPT prompt
-    prompt = f"Describe the screen based on the following details:\n{screen_description}"
+    # Generate a GPT prompt with clear instructions
+    prompt = (
+        f"User asked: \"{user_command}\". Based on the screen data provided below, "
+        f"analyze and answer the user's query as best as possible:\n{screen_data}\n"
+        "Only use the provided screen data to answer the question."
+    )
+
     print("Sending prompt to GPT...")
 
-    # Add screen context to conversation history
-    conversation_history.append({"role": "user", "content": prompt})
+    # Add screen context and user command to conversation history
+    conversation_history.append({"role": "user", "content": user_command})
+    conversation_history.append({"role": "assistant", "content": screen_data})
 
     # Get GPT's response
     gpt_response = get_gpt_response(conversation_history)
@@ -133,7 +133,7 @@ def get_gpt_response(conversation_history):
     """
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=conversation_history
         )
         return response['choices'][0]['message']['content']
@@ -152,11 +152,11 @@ def speak_text(text, rate=200):
 
 def main():
     print("Welcome! Speak into your microphone, and I will respond.")
-    print("Say 'exit' to quit or 'view my screen' to analyze your screen.")
+    print("Say 'exit' to quit or ask about your screen (e.g., 'How many icons are on my screen?').")
 
     # Initialize conversation history with a system message
     conversation_history = [
-        {"role": "system", "content": "You are a helpful assistant."}
+        {"role": "system", "content": "You are a helpful assistant that can analyze the user's screen and answer questions dynamically."}
     ]
 
     while True:
@@ -166,8 +166,8 @@ def main():
             if user_input.lower() == "exit":
                 print("Goodbye!")
                 break
-            elif user_input.lower() == "view my screen":
-                interpret_screen(conversation_history)
+            elif "screen" in user_input.lower():
+                interpret_screen(user_input, conversation_history)
             else:
                 # Add user input to conversation history
                 conversation_history.append({"role": "user", "content": user_input})
