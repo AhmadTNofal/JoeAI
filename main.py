@@ -12,6 +12,7 @@ from ultralytics import YOLO
 from windows_tools.installed_software import get_installed_software
 from difflib import get_close_matches
 import psutil
+import pygetwindow as gw
 
 # Set your OpenAI API key
 openai.api_key = "sk-tbtbdjXN0PNeKVX8x6oXJFABUkwYsEeOj9TinWn3jOT3BlbkFJuGto6skfATpazIFkDBnEr1JtKDe0ykgJkavseRQP0A"
@@ -102,7 +103,7 @@ def search_executables_in_paths(app_name, paths=SEARCH_PATHS):
         if path and os.path.exists(path):
             for root, _, files in os.walk(path):
                 for file in files:
-                    if app_name_lower in file.lower() and file.lower().endswith(".exe"):
+                    if app_name_lower in file.lower():
                         return os.path.join(root, file)
     return None
 
@@ -147,29 +148,57 @@ def open_application(app_name):
         print(f"Error opening program: {e}")
         return f"An error occurred while trying to open '{app_name}'."
 
+import pygetwindow as gw
+import psutil
+
 def close_application(app_name):
-    app_name_lower = app_name.lower()
+    """
+    Close an application or file based on the given name.
+    Matches both process names and window titles.
+    """
+    app_name = app_name.lower().strip()
+    closed = False
+
     try:
-        matched_process = None
-        for process in psutil.process_iter(['name']):
-            if app_name_lower in process.info['name'].lower():
-                process.terminate()
-                return f"Closed {process.info['name']}."
+        # Check all running processes
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                process_name = proc.info['name'].lower() if proc.info['name'] else ""
+                cmdline = " ".join(proc.info['cmdline']).lower() if proc.info['cmdline'] else ""
 
-        # If no exact match found, try a close match
-        running_processes = [p.info['name'] for p in psutil.process_iter(['name'])]
-        close_match = get_close_matches(app_name_lower, running_processes, n=1, cutoff=0.3)
-        if close_match:
-            matched_process = close_match[0]
-            for process in psutil.process_iter(['name']):
-                if process.info['name'] == matched_process:
-                    process.terminate()
-                    return f"Closed {matched_process} (closest match to '{app_name}')."
+                if app_name in process_name or app_name in cmdline:
+                    proc.terminate()
+                    print(f"Closed {process_name}.")
+                    speak_text(f"Closed {process_name}.")
+                    closed = True
+                    break
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
 
-        return f"Could not find a running application matching '{app_name}'."
+        # Check open windows for a matching title
+        if not closed:
+            windows = gw.getAllTitles()  # Get all window titles
+            for window_title in windows:
+                if app_name in window_title.lower():
+                    # Match the window title with a process
+                    for proc in psutil.process_iter(['pid']):
+                        try:
+                            if proc.info['pid'] == gw.getWindowsWithTitle(window_title)[0]._hWnd:  # Use _hWnd to match process
+                                proc.terminate()
+                                print(f"Closed application with window title '{window_title}'.")
+                                speak_text(f"Closed application with window title '{window_title}'.")
+                                closed = True
+                                break
+                        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                            continue
+
+        if not closed:
+            return f"Could not find an open application or file matching '{app_name}'."
     except Exception as e:
-        print(f"Error closing application: {e}")
+        print(f"Error closing program: {e}")
         return f"An error occurred while trying to close '{app_name}'."
+
+    return f"Successfully closed '{app_name}'."
 
 def speak_text(text, rate=200):
     engine.setProperty("rate", rate)
