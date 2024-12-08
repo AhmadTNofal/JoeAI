@@ -78,7 +78,7 @@ def detect_objects(image):
 
 def interpret_screen(user_command, conversation_history):
     """
-    Captures the screen, extracts data, and interprets the screen dynamically based on the user's command.
+    Captures the screen, extracts data, and makes GPT respond as though it can directly see the screen.
     :param user_command: The text command from the user.
     :param conversation_history: List of messages forming the conversation.
     """
@@ -92,27 +92,25 @@ def interpret_screen(user_command, conversation_history):
     print("Detecting objects on the screen...")
     detected_objects = detect_objects(screen_image)
 
-    # Create a detailed screen description
-    screen_data = "Here is what I see on the screen:\n"
+    # Create a natural language description of the screen
+    screen_description = ""
     if screen_text:
-        screen_data += f"- Extracted text: {screen_text}\n"
+        screen_description += f"I see some text on the screen: \"{screen_text}\".\n"
     if detected_objects:
-        screen_data += f"- Detected objects: {', '.join(detected_objects)}\n"
+        screen_description += f"There are {len(detected_objects)} items visible, including: {', '.join(detected_objects)}.\n"
 
-    print(f"Screen Data: {screen_data}")
-
-    # Generate a GPT prompt with clear instructions
+    # Craft a prompt that makes GPT respond as if it can see the screen
     prompt = (
-        f"User asked: \"{user_command}\". Based on the screen data provided below, "
-        f"analyze and answer the user's query as best as possible:\n{screen_data}\n"
-        "Only use the provided screen data to answer the question."
+        f"You are analyzing the user's screen. Based on what you observe, "
+        f"respond to their query: \"{user_command}\".\n"
+        f"Here is what you notice:\n{screen_description}"
     )
 
-    print("Sending prompt to GPT...")
+    print(f"Prompt sent to GPT:\n{prompt}")
 
-    # Add screen context and user command to conversation history
+    # Add user command and screen context to conversation history
     conversation_history.append({"role": "user", "content": user_command})
-    conversation_history.append({"role": "assistant", "content": screen_data})
+    conversation_history.append({"role": "assistant", "content": screen_description})
 
     # Get GPT's response
     gpt_response = get_gpt_response(conversation_history)
@@ -124,6 +122,7 @@ def interpret_screen(user_command, conversation_history):
         speak_text(gpt_response)
     else:
         print("Failed to get a response from GPT.")
+
 
 def get_gpt_response(conversation_history):
     """
