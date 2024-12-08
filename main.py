@@ -6,9 +6,11 @@ import cv2
 import numpy as np
 from PIL import Image
 import speech_recognition as sr
+from ultralytics import YOLO
+import os
 
 # Set your OpenAI API key
-openai.api_key = "sk-tbtbdjXN0PNeKVX8x6oXJFABUkwYsEeOj9TinWn3jOT3BlbkFJuGto6skfATpazIFkDBnEr1JtKDe0ykgJkavseRQP0A"  # Replace with your API key
+openai.api_key = "sk-tbtbdjXN0PNeKVX8x6oXJFABUkwYsEeOj9TinWn3jOT3BlbkFJuGto6skfATpazIFkDBnEr1JtKDe0ykgJkavseRQP0A"  
 
 # Initialize text-to-speech engine
 engine = pyttsx3.init()
@@ -77,34 +79,75 @@ def extract_text_from_image(image):
 
 def detect_objects(image):
     """
-    Detects objects (like icons or windows) in the given image using OpenCV and YOLOv5.
+    Detects objects in the entire screen capture using YOLOv5.
     :param image: PIL Image object.
     :return: List of detected objects with labels.
     """
     # Convert PIL Image to NumPy array
     image_np = np.array(image)
 
-    # Placeholder for object detection logic
-    # Replace this with real detection logic using a pre-trained model
-    detected_objects = ["desktop icon", "desktop icon", "taskbar", "open application window"]
-    return detected_objects
+    # Save the image as a temporary file for YOLO
+    temp_image_path = "temp_screen.jpg"
+    image.save(temp_image_path)
+
+    try:
+        # Load YOLOv5 model
+        model = YOLO("yolov5s")  # Pre-trained YOLOv5 model
+
+        # Perform detection on the entire screen
+        results = model.predict(source=temp_image_path)
+
+        # Extract detected object labels
+        detected_objects = []
+        for result in results.pandas().xyxy[0].to_dict(orient="records"):
+            detected_objects.append(result["name"])
+
+        # Clean up temporary file
+        if os.path.exists(temp_image_path):
+            os.remove(temp_image_path)
+
+        return detected_objects if detected_objects else ["No objects detected"]
+
+    except Exception as e:
+        print(f"Error during object detection: {e}")
+        return ["Detection failed"]
+
 
 
 def interpret_screen(user_command, conversation_history):
     """
     Captures the screen, extracts data, and ensures GPT provides confident predictions about the screen.
+    Includes detected icons and visual elements for enhanced descriptions.
+    
     :param user_command: The text command from the user.
     :param conversation_history: List of messages forming the conversation.
     """
     print("Capturing screen...")
     screen_image = capture_screen()
 
+    # Save the screen image as a temporary file
+    temp_image_path = "temp_screen.jpg"
+    screen_image.save(temp_image_path)
+
     # Extract text and detect objects on the screen
     print("Extracting text from the screen...")
     screen_text = extract_text_from_image(screen_image)
 
     print("Detecting objects on the screen...")
-    detected_objects = detect_objects(screen_image)
+    try:
+        # Load YOLO model for object detection
+        model = YOLO("yolov5s")  # Pre-trained YOLOv5 model
+        results = model.predict(source=temp_image_path)
+
+        # Extract labels of detected objects
+        detected_objects = [result["name"] for result in results.pandas().xyxy[0].to_dict(orient="records")]
+    except Exception as e:
+        print(f"Error during object detection: {e}")
+        detected_objects = ["No objects detected"]
+
+    # Clean up the temporary image
+    if os.path.exists(temp_image_path):
+        os.remove(temp_image_path)
 
     # Create a confident description based on detected or fallback data
     if screen_text or detected_objects:
@@ -146,6 +189,7 @@ def interpret_screen(user_command, conversation_history):
         speak_text(gpt_response)
     else:
         print("Failed to get a response from GPT.")
+
 
 
 def get_gpt_response(conversation_history):
