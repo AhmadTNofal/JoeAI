@@ -1,3 +1,5 @@
+import os
+import subprocess
 import openai
 import pyttsx3
 import pyautogui
@@ -7,10 +9,11 @@ import numpy as np
 from PIL import Image
 import speech_recognition as sr
 from ultralytics import YOLO
-import os
+from windows_tools.installed_software import get_installed_software
+from difflib import get_close_matches
 
 # Set your OpenAI API key
-openai.api_key = "sk-tbtbdjXN0PNeKVX8x6oXJFABUkwYsEeOj9TinWn3jOT3BlbkFJuGto6skfATpazIFkDBnEr1JtKDe0ykgJkavseRQP0A"  
+openai.api_key = "sk-tbtbdjXN0PNeKVX8x6oXJFABUkwYsEeOj9TinWn3jOT3BlbkFJuGto6skfATpazIFkDBnEr1JtKDe0ykgJkavseRQP0A"
 
 # Initialize text-to-speech engine
 engine = pyttsx3.init()
@@ -26,13 +29,16 @@ conversation_history = [
     }
 ]
 
+# Paths to scan for executables
+SEARCH_PATHS = [
+    os.getenv("ProgramFiles"),
+    os.getenv("ProgramFiles(x86)"),
+    os.path.expanduser("~\\AppData\\Local"),
+    os.path.expanduser("~\\AppData\\Roaming"),
+    "C:\\Windows\\System32",
+]
+
 def transcribe_speech(timeout=10):
-    """
-    Captures speech from the default microphone and converts it to text.
-    Handles timeout and other exceptions gracefully.
-    :param timeout: Time to wait for the user to start speaking.
-    :return: Transcribed text or None if no speech was detected.
-    """
     recognizer = sr.Recognizer()
     try:
         with sr.Microphone() as source:
@@ -55,20 +61,10 @@ def transcribe_speech(timeout=10):
         return None
 
 def capture_screen():
-    """
-    Captures the entire screen and saves it as an image.
-    :return: PIL Image object of the screen.
-    """
     screenshot = pyautogui.screenshot()
     return screenshot
 
-
 def extract_text_from_image(image):
-    """
-    Extracts text from a given image using Tesseract OCR.
-    :param image: PIL Image object.
-    :return: Extracted text as a string.
-    """
     try:
         text = pytesseract.image_to_string(image)
         return text.strip()
@@ -76,97 +72,106 @@ def extract_text_from_image(image):
         print(f"Error in text extraction: {e}")
         return None
 
-
 def detect_objects(image):
-    """
-    Detects objects in the entire screen capture using YOLOv5.
-    :param image: PIL Image object.
-    :return: List of detected objects with labels.
-    """
-    # Convert PIL Image to NumPy array
     image_np = np.array(image)
-
-    # Save the image as a temporary file for YOLO
     temp_image_path = "temp_screen.jpg"
     image.save(temp_image_path)
-
     try:
-        # Load YOLOv5 model
-        model = YOLO("yolov5s")  # Pre-trained YOLOv5 model
-
-        # Perform detection on the entire screen
+        model = YOLO("yolov5s")
         results = model.predict(source=temp_image_path)
-
-        # Extract detected object labels
-        detected_objects = []
-        for result in results.pandas().xyxy[0].to_dict(orient="records"):
-            detected_objects.append(result["name"])
-
-        # Clean up temporary file
-        if os.path.exists(temp_image_path):
-            os.remove(temp_image_path)
-
-        return detected_objects if detected_objects else ["No objects detected"]
-
-    except Exception as e:
-        print(f"Error during object detection: {e}")
-        return ["Detection failed"]
-
-
-
-def interpret_screen(user_command, conversation_history):
-    """
-    Captures the screen, extracts data, and ensures GPT provides confident predictions about the screen.
-    Includes detected icons and visual elements for enhanced descriptions.
-    
-    :param user_command: The text command from the user.
-    :param conversation_history: List of messages forming the conversation.
-    """
-    print("Capturing screen...")
-    screen_image = capture_screen()
-
-    # Save the screen image as a temporary file
-    temp_image_path = "temp_screen.jpg"
-    screen_image.save(temp_image_path)
-
-    # Extract text and detect objects on the screen
-    print("Extracting text from the screen...")
-    screen_text = extract_text_from_image(screen_image)
-
-    print("Detecting objects on the screen...")
-    try:
-        # Load YOLO model for object detection
-        model = YOLO("yolov5s")  # Pre-trained YOLOv5 model
-        results = model.predict(source=temp_image_path)
-
-        # Extract labels of detected objects
         detected_objects = [result["name"] for result in results.pandas().xyxy[0].to_dict(orient="records")]
     except Exception as e:
         print(f"Error during object detection: {e}")
         detected_objects = ["No objects detected"]
+    finally:
+        if os.path.exists(temp_image_path):
+            os.remove(temp_image_path)
+    return detected_objects
 
-    # Clean up the temporary image
-    if os.path.exists(temp_image_path):
-        os.remove(temp_image_path)
+def list_installed_programs():
+    print("Installed applications:")
+    software_list = get_installed_software()
+    for software in software_list:
+        print(software['name'])
+    return [software['name'] for software in software_list]
 
-    # Create a confident description based on detected or fallback data
+def search_executables_in_paths(app_name, paths=SEARCH_PATHS):
+    app_name_lower = app_name.lower()
+    for path in paths:
+        if path and os.path.exists(path):
+            for root, _, files in os.walk(path):
+                for file in files:
+                    if app_name_lower in file.lower() and file.lower().endswith(".exe"):
+                        return os.path.join(root, file)
+    return None
+
+def open_application(app_name):
+    app_name = app_name.lower().strip()
+    try:
+        # Check installed software
+        software_list = get_installed_software()
+        software_names = [software['name'].lower() for software in software_list]
+
+        # Exact match search
+        for software in software_list:
+            if app_name in software['name'].lower():
+                install_location = software.get('install_location', None)
+                if install_location:
+                    executable_path = search_executables_in_paths("", [install_location])
+                    if executable_path:
+                        subprocess.Popen(executable_path, shell=True)
+                        return f"Opening {software['name']}..."
+
+        # Fallback: Search system directories for matching executables
+        executable_path = search_executables_in_paths(app_name)
+        if executable_path:
+            subprocess.Popen(executable_path, shell=True)
+            return f"Opening {app_name.capitalize()}..."
+
+        # Look for a close match in the installed applications
+        close_match = get_close_matches(app_name, software_names, n=1, cutoff=0.3)
+        if close_match:
+            matched_software = close_match[0]
+            for software in software_list:
+                if software['name'].lower() == matched_software:
+                    install_location = software.get('install_location', None)
+                    if install_location:
+                        executable_path = search_executables_in_paths("", [install_location])
+                        if executable_path:
+                            subprocess.Popen(executable_path, shell=True)
+                            return f"Opening {software['name']} (closest match to '{app_name}')..."
+
+        return f"Could not find a program matching '{app_name}'."
+    except Exception as e:
+        print(f"Error opening program: {e}")
+        return f"An error occurred while trying to open '{app_name}'."
+
+def speak_text(text, rate=200):
+    engine.setProperty("rate", rate)
+    engine.say(text)
+    engine.runAndWait()
+
+def interpret_screen(user_command, conversation_history):
+    print("Capturing screen...")
+    screen_image = capture_screen()
+    temp_image_path = "temp_screen.jpg"
+    screen_image.save(temp_image_path)
+
+    print("Extracting text from the screen...")
+    screen_text = extract_text_from_image(screen_image)
+
+    print("Detecting objects on the screen...")
+    detected_objects = detect_objects(screen_image)
+
     if screen_text or detected_objects:
         screen_description = "Here's what I see based on my analysis:\n"
         if screen_text:
             screen_description += f"- Text visible on the screen: \"{screen_text}\".\n"
         if detected_objects:
             screen_description += f"- Detected items: {', '.join(detected_objects)}.\n"
-            if "desktop icon" in detected_objects:
-                screen_description += "- It appears you're on your desktop, as I see desktop icons.\n"
-            if "taskbar" in detected_objects:
-                screen_description += "- Your taskbar is visible, likely containing open or pinned applications.\n"
     else:
-        # Fallback description for no data
-        screen_description = (
-            "Based on typical setups, your screen likely shows a desktop with icons and a taskbar, possibly with open applications."
-        )
+        screen_description = "I couldn't detect any significant items on your screen."
 
-    # Construct a directive prompt for GPT
     prompt = (
         f"Based on the following data, respond confidently as though you can see the screen.\n"
         f"The user asked: \"{user_command}\".\n"
@@ -175,29 +180,18 @@ def interpret_screen(user_command, conversation_history):
 
     print(f"Prompt sent to GPT:\n{prompt}")
 
-    # Add user command and screen description to conversation history
     conversation_history.append({"role": "user", "content": user_command})
     conversation_history.append({"role": "assistant", "content": screen_description})
 
-    # Get GPT's response
     gpt_response = get_gpt_response(conversation_history)
     if gpt_response:
         print(f"GPT-4 Response: {gpt_response}")
-        # Add GPT response to conversation history
         conversation_history.append({"role": "assistant", "content": gpt_response})
-        # Speak the response
         speak_text(gpt_response)
     else:
         print("Failed to get a response from GPT.")
 
-
-
 def get_gpt_response(conversation_history):
-    """
-    Sends the conversation history to GPT and gets a response.
-    :param conversation_history: List of messages forming the conversation.
-    :return: GPT's response text or None if an error occurs.
-    """
     try:
         response = openai.ChatCompletion.create(
             model="gpt-4o",
@@ -208,47 +202,37 @@ def get_gpt_response(conversation_history):
         print(f"Error communicating with GPT: {e}")
         return None
 
-
-def speak_text(text, rate=200):
-    """
-    Converts text to speech using pyttsx3.
-    :param text: Text to convert to speech.
-    """
-    engine.setProperty('rate', rate)  # Set the speech rate
-    engine.say(text)
-    engine.runAndWait()
-
-
 def main():
     print("Welcome! Speak into your microphone, and I will respond.")
-    print("Say 'exit' to quit or ask about your screen (e.g., 'How many icons are on my screen?').")
+    print("Say 'exit' to quit, 'list applications' to see installed apps, or ask me to open an app.")
 
     while True:
-        # Get speech input
         user_input = transcribe_speech(timeout=10)
         if user_input:
             if user_input.lower() == "exit":
                 print("Goodbye!")
                 break
+            elif "list applications" in user_input.lower():
+                installed_apps = list_installed_programs()
+                speak_text("Here is the list of installed applications.")
+            elif "open" in user_input.lower():
+                app_name = user_input.lower().replace("open", "").strip()
+                result = open_application(app_name)
+                print(result)
+                speak_text(result)
             elif "screen" in user_input.lower():
                 interpret_screen(user_input, conversation_history)
             else:
-                # Add user input to conversation history
                 conversation_history.append({"role": "user", "content": user_input})
-
-                # Get GPT response
                 response = get_gpt_response(conversation_history)
                 if response:
                     print(f"GPT-4: {response}")
-                    # Add GPT response to conversation history
                     conversation_history.append({"role": "assistant", "content": response})
-                    # Speak the response
                     speak_text(response)
                 else:
                     print("Failed to get a response from GPT.")
         else:
             print("No input detected. Try again.")
-
 
 if __name__ == "__main__":
     main()
