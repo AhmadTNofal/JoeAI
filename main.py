@@ -11,6 +11,7 @@ import speech_recognition as sr
 from ultralytics import YOLO
 from windows_tools.installed_software import get_installed_software
 from difflib import get_close_matches
+import psutil
 
 # Set your OpenAI API key
 openai.api_key = "sk-tbtbdjXN0PNeKVX8x6oXJFABUkwYsEeOj9TinWn3jOT3BlbkFJuGto6skfATpazIFkDBnEr1JtKDe0ykgJkavseRQP0A"
@@ -146,6 +147,30 @@ def open_application(app_name):
         print(f"Error opening program: {e}")
         return f"An error occurred while trying to open '{app_name}'."
 
+def close_application(app_name):
+    app_name_lower = app_name.lower()
+    try:
+        matched_process = None
+        for process in psutil.process_iter(['name']):
+            if app_name_lower in process.info['name'].lower():
+                process.terminate()
+                return f"Closed {process.info['name']}."
+
+        # If no exact match found, try a close match
+        running_processes = [p.info['name'] for p in psutil.process_iter(['name'])]
+        close_match = get_close_matches(app_name_lower, running_processes, n=1, cutoff=0.3)
+        if close_match:
+            matched_process = close_match[0]
+            for process in psutil.process_iter(['name']):
+                if process.info['name'] == matched_process:
+                    process.terminate()
+                    return f"Closed {matched_process} (closest match to '{app_name}')."
+
+        return f"Could not find a running application matching '{app_name}'."
+    except Exception as e:
+        print(f"Error closing application: {e}")
+        return f"An error occurred while trying to close '{app_name}'."
+
 def speak_text(text, rate=200):
     engine.setProperty("rate", rate)
     engine.say(text)
@@ -204,7 +229,7 @@ def get_gpt_response(conversation_history):
 
 def main():
     print("Welcome! Speak into your microphone, and I will respond.")
-    print("Say 'exit' to quit, 'list applications' to see installed apps, or ask me to open an app.")
+    print("Say 'exit' to quit, 'list applications' to see installed apps, 'open [app]' to open an app, or 'close [app]' to close an app.")
 
     while True:
         user_input = transcribe_speech(timeout=10)
@@ -218,6 +243,11 @@ def main():
             elif "open" in user_input.lower():
                 app_name = user_input.lower().replace("open", "").strip()
                 result = open_application(app_name)
+                print(result)
+                speak_text(result)
+            elif "close" in user_input.lower():
+                app_name = user_input.lower().replace("close", "").strip()
+                result = close_application(app_name)
                 print(result)
                 speak_text(result)
             elif "screen" in user_input.lower():
