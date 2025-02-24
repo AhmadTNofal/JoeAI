@@ -44,6 +44,19 @@ def speak_text(text, rate=200):
     engine.say(text)
     engine.runAndWait()
 
+def clean_markdown(text):
+    """Removes Markdown symbols for clean speech output."""
+    text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)  # Remove **bold**
+    text = re.sub(r"\*(.*?)\*", r"\1", text)  # Remove *italics*
+    text = re.sub(r"`{3}cpp\s*", "", text)  # Remove ```cpp
+    text = re.sub(r"`{3}.*?\n", "", text)  # Remove other code block markers ```
+    text = re.sub(r"`(.*?)`", r"\1", text)  # Remove `inline code`
+    text = re.sub(r"^[-*]\s+", "", text, flags=re.MULTILINE)  # Remove bullet points
+    text = re.sub(r"#{1,6}\s*", "", text)  # Remove headings (# Heading)
+    text = re.sub(r"\[(.*?)\]\(.*?\)", r"\1", text)  # Remove Markdown links
+    text = re.sub(r"!\[.*?\]\(.*?\)", "", text)  # Remove image links
+    text = text.replace("\n", " ")  # Replace new lines with spaces
+    return text.strip()
 
 def transcribe_speech(timeout=10):
     """Capture speech input and transcribe it."""
@@ -206,7 +219,7 @@ def interpret_screen():
 
 
 def get_gpt_response(user_query):
-    """Handles general queries using GPT-4."""
+    """Handles general queries using GPT-4 and cleans Markdown formatting for TTS."""
     try:
         conversation_history.append({"role": "user", "content": user_query})
         response = openai.ChatCompletion.create(
@@ -214,13 +227,16 @@ def get_gpt_response(user_query):
             messages=conversation_history
         )
         gpt_response = response['choices'][0]['message']['content']
-        print(f"Joe AI: {gpt_response}")
-        speak_text(gpt_response)
-        return gpt_response
+        
+        # Clean Markdown before speaking the response
+        plain_text_response = clean_markdown(gpt_response)
+        
+        print(f"Joe AI: {plain_text_response}")
+        speak_text(plain_text_response)
+        return plain_text_response
     except Exception as e:
         print(f"Error communicating with GPT: {e}")
         return "I encountered an issue retrieving an answer."
-
 
 # Start listening for "Hey Joe" wake word
 if __name__ == "__main__":
