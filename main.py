@@ -1,4 +1,5 @@
 import os
+import webbrowser
 import openai
 import pyttsx3
 import pyautogui
@@ -33,19 +34,9 @@ conversation_history = [
 WAKE_WORD = "hey joe"
 SLEEP_WORD = "sleep"
 EXIT_WORD = "exit"
+SEARCH_WORD = "search for"
 sleep_mode = True
 
-def clean_markdown(text):
-    """Removes Markdown symbols and formatting from the text."""
-    text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)  # Remove **bold**
-    text = re.sub(r"\*(.*?)\*", r"\1", text)  # Remove *italics*
-    text = re.sub(r"`(.*?)`", r"\1", text)  # Remove `inline code`
-    text = re.sub(r"^[-*]\s+", "", text, flags=re.MULTILINE)  # Remove bullet points
-    text = re.sub(r"#{1,6}\s*", "", text)  # Remove headings (e.g., # Heading)
-    text = re.sub(r"\[(.*?)\]\(.*?\)", r"\1", text)  # Remove Markdown links
-    text = re.sub(r"!\[.*?\]\(.*?\)", "", text)  # Remove image links
-    text = text.replace("\n", " ")  # Replace new lines with spaces
-    return text.strip()
 
 def speak_text(text, rate=200):
     """Convert text to speech."""
@@ -107,6 +98,10 @@ def listen_for_commands():
                 speak_text("Shutting down.")
                 os._exit(0)  # Force exit
 
+            elif SEARCH_WORD in command:
+                query = command.replace(SEARCH_WORD, "").strip()
+                result = search_web(query)
+
             elif "open" in command:
                 app_name = command.replace("open", "").strip()
                 result = open_application(app_name)
@@ -124,6 +119,21 @@ def listen_for_commands():
 
             print(result)
             speak_text(result)
+
+
+def search_web(query):
+    """Searches the default web browser for the given query."""
+    if not query:
+        return "Joe AI: Please provide something to search for."
+
+    print(f"Joe AI: Searching for {query} on the web...")
+    speak_text(f"Searching for {query} on the web...")
+
+    # Open Google search in the default browser
+    search_url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
+    webbrowser.open(search_url)
+
+    return f"Opened search results for {query}."
 
 
 def open_application(app_name):
@@ -196,7 +206,7 @@ def interpret_screen():
 
 
 def get_gpt_response(user_query):
-    """Handles general queries using GPT-4 and cleans Markdown formatting."""
+    """Handles general queries using GPT-4."""
     try:
         conversation_history.append({"role": "user", "content": user_query})
         response = openai.ChatCompletion.create(
@@ -204,13 +214,9 @@ def get_gpt_response(user_query):
             messages=conversation_history
         )
         gpt_response = response['choices'][0]['message']['content']
-        
-        # Clean Markdown before speaking the response
-        plain_text_response = clean_markdown(gpt_response)
-        
-        print(f"Joe AI: {plain_text_response}")
-        speak_text(plain_text_response)
-        return plain_text_response
+        print(f"Joe AI: {gpt_response}")
+        speak_text(gpt_response)
+        return gpt_response
     except Exception as e:
         print(f"Error communicating with GPT: {e}")
         return "I encountered an issue retrieving an answer."
