@@ -12,8 +12,8 @@ from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction, QText
 from PyQt5.QtGui import QIcon, QMovie
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 import sys
-import base64
 import re
+import cv2
 
 # Set your OpenAI API key
 openai.api_key = "sk-tbtbdjXN0PNeKVX8x6oXJFABUkwYsEeOj9TinWn3jOT3BlbkFJuGto6skfATpazIFkDBnEr1JtKDe0ykgJkavseRQP0A"
@@ -252,39 +252,59 @@ def capture_screenshot():
     screenshot.save(screenshot_path)
     return screenshot_path
 
-
-def analyze_screen():
-    """Captures the screen, sends it to OpenAI, and deletes the file after processing."""
+def analyze_screen(user_query=""):
+    """Captures the screen, extracts visible text/icons, and answers user queries based on the screen details."""
     try:
+        # Capture the screen
         screenshot_path = capture_screenshot()
-        
-        # Read the image and convert it to base64
-        with open(screenshot_path, "rb") as image_file:
-            base64_image = base64.b64encode(image_file.read()).decode('utf-8')
+        screen_image = cv2.imread(screenshot_path)
 
-        # Send the base64-encoded image to OpenAI
-        response = openai.ChatCompletion.create(
-            model="gpt-4-turbo", 
-            messages=[
-                {"role": "system", "content": "You are an AI assistant that helps users understand their screen content and assist with tasks."},
-                {"role": "user", "content": "Describe this screenshot and suggest actions based on it."},
-                {"role": "user", "content": [
-                    {"type": "text", "text": "Here is an image of my screen."},
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}}
-                ]}
-            ],
-            max_tokens=500
+        # Step 1: Extract All Visible Text Using OCR
+        extracted_text = pytesseract.image_to_string(screen_image, lang="eng").strip()
+
+        # Step 2: Identify UI Elements (Icons, Buttons, Menus)
+        detected_elements = detect_ui_elements(screen_image)
+
+        # Step 3: Generate a Structured Screen Description
+        screen_analysis = (
+            f" **Extracted Text:**\n{extracted_text if extracted_text else 'No text detected.'}\n\n"
+            f" **Detected UI Elements:**\n{', '.join(detected_elements) if detected_elements else 'No icons or buttons detected.'}"
         )
 
-        screen_analysis = response['choices'][0]['message']['content']
-        speak_text(screen_analysis)
-        
+        # Remove screenshot after processing
         os.remove(screenshot_path)
-        
-        return screen_analysis
+
+        # Step 4: Pass Only the User Query and Screen Analysis to GPT-4
+        combined_query = (
+            f"The user is asking: '{user_query}'. "
+            f"Here is everything visible on the screen:\n{screen_analysis}. "
+            f"Provide a response ONLY based on the user's question and the extracted screen content."
+        )
+
+        # Get GPT-4's response
+        final_response = get_gpt_response(combined_query)
+
+        return final_response  # Return AI's response based on extracted details
+
     except Exception as e:
         return f"Error analyzing screen: {str(e)}"
 
+def detect_ui_elements(image):
+    """Detects UI elements (icons, buttons, menus) using edge detection and contour analysis."""
+    try:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(gray, threshold1=100, threshold2=200)
+        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        detected_elements = []
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            if w > 30 and h > 30:  # Filter out small noise
+                detected_elements.append(f"Icon/Button at ({x}, {y}) size ({w}x{h})")
+
+        return detected_elements
+    except Exception:
+        return []
 
 def close_application(app_name):
     """Closes an application based on process name or window title."""
