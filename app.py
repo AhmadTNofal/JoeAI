@@ -7,14 +7,12 @@ import pytesseract
 import numpy as np
 import speech_recognition as sr
 import psutil
-import pygetwindow as gw
 import time
-from ultralytics import YOLO
 from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction, QTextEdit, QVBoxLayout, QWidget, QLabel, QPushButton, QHBoxLayout
 from PyQt5.QtGui import QIcon, QMovie
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 import sys
-import threading
+import base64
 import re
 
 # Set your OpenAI API key
@@ -88,6 +86,9 @@ class VoiceListener(QThread):
             query = command.replace(SEARCH_WORD, "").strip()
             result = search_web(query)
 
+        elif SCREEN_WORD in command:
+            return analyze_screen()
+
         elif "open" in command:
             app_name = command.replace("open", "").strip()
             result = open_application(app_name)
@@ -95,10 +96,6 @@ class VoiceListener(QThread):
         elif "close" in command:
             app_name = command.replace("close", "").strip()
             result = close_application(app_name)
-
-        elif "screen" in command:
-            interpret_screen()
-            result = "Screen analysis complete."
 
         else:
             result = get_gpt_response(command)
@@ -120,6 +117,7 @@ WAKE_WORD = "hey joe"
 SLEEP_WORD = "sleep"
 EXIT_WORD = "exit"
 SEARCH_WORD = "search for"
+SCREEN_WORD = "screen"
 sleep_mode = True
 
 
@@ -162,7 +160,6 @@ def transcribe_speech(timeout=10):
         print(f"Error: {e}")
         return None
 
-
 def listen_for_wake_word():
     """Continuously listens for 'Hey Joe' to wake up."""
     global sleep_mode
@@ -175,7 +172,6 @@ def listen_for_wake_word():
                 speak_text("I'm listening!")
                 sleep_mode = False
                 listen_for_commands()  # Start command mode
-
 
 def listen_for_commands():
     """Continuously listens for user commands after waking up."""
@@ -208,16 +204,14 @@ def listen_for_commands():
                 app_name = command.replace("close", "").strip()
                 result = close_application(app_name)
 
-            elif "screen" in command:
-                interpret_screen()
-                result = "Screen analysis complete."
+            elif SCREEN_WORD in command:
+                return analyze_screen()
 
             else:
                 result = get_gpt_response(command)
 
             print(result)
             speak_text(result)
-
 
 def search_web(query):
     """Searches the default web browser for the given query."""
@@ -232,7 +226,6 @@ def search_web(query):
     webbrowser.open(search_url)
 
     return f"Opened search results for {query}."
-
 
 def open_application(app_name):
     """Opens an application using the Windows taskbar search."""
@@ -251,6 +244,46 @@ def open_application(app_name):
     except Exception as e:
         print(f"Error opening program: {e}")
         return f"An error occurred while trying to open '{app_name}'."
+
+def capture_screenshot():
+    """Captures a screenshot and saves it locally."""
+    screenshot_path = "screenshot.png"
+    screenshot = pyautogui.screenshot()
+    screenshot.save(screenshot_path)
+    return screenshot_path
+
+
+def analyze_screen():
+    """Captures the screen, sends it to OpenAI, and deletes the file after processing."""
+    try:
+        screenshot_path = capture_screenshot()
+        
+        # Read the image and convert it to base64
+        with open(screenshot_path, "rb") as image_file:
+            base64_image = base64.b64encode(image_file.read()).decode('utf-8')
+
+        # Send the base64-encoded image to OpenAI
+        response = openai.ChatCompletion.create(
+            model="gpt-4-turbo", 
+            messages=[
+                {"role": "system", "content": "You are an AI assistant that helps users understand their screen content and assist with tasks."},
+                {"role": "user", "content": "Describe this screenshot and suggest actions based on it."},
+                {"role": "user", "content": [
+                    {"type": "text", "text": "Here is an image of my screen."},
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}}
+                ]}
+            ],
+            max_tokens=500
+        )
+
+        screen_analysis = response['choices'][0]['message']['content']
+        speak_text(screen_analysis)
+        
+        os.remove(screenshot_path)
+        
+        return screen_analysis
+    except Exception as e:
+        return f"Error analyzing screen: {str(e)}"
 
 
 def close_application(app_name):
@@ -282,7 +315,7 @@ def close_application(app_name):
     return f"Joe AI: Successfully closed '{app_name}'."
 
 
-def interpret_screen():
+
     """Captures the screen and describes its contents."""
     print("Joe AI: Capturing screen...")
     screen_image = pyautogui.screenshot()
