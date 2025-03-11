@@ -120,7 +120,6 @@ SEARCH_WORD = "search for"
 SCREEN_WORD = "screen"
 sleep_mode = True
 
-
 def speak_text(text, rate=200):
     """Convert text to speech."""
     engine.setProperty("rate", rate)
@@ -354,7 +353,6 @@ def close_application(app_name):
 
     print(f"Joe AI: {screen_description}")
     speak_text(screen_description)
-
 
 def get_gpt_response(user_query):
     """Handles general queries using GPT-4 and cleans Markdown formatting for TTS."""
