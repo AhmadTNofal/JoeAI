@@ -75,25 +75,25 @@ class VoiceListener(QThread):
 
         intent_prompt = (
             f"You are Joe AI. The user said: \"{command}\".\n\n"
-            "Your task is to extract user intent from this request.\n"
-            "Return ONLY a JSON array of objects, like this:\n"
+            "Identify the user's intent clearly. Respond with ONLY a JSON array of objects. Each object should follow this format:\n"
             "[\n"
-            "  {{ \"intent\": \"open_app\", \"value\": \"Spotify\" }},\n"
-            "  {{ \"intent\": \"web_search\", \"value\": \"lofi music\" }}\n"
+            "  { \"intent\": \"open_app\", \"value\": \"Spotify\" },\n"
+            "  { \"intent\": \"web_search\", \"value\": \"lofi music\" }\n"
             "]\n\n"
             "Valid intents:\n"
-            "- general_chat\n"
+            "- general_chat (for greetings, thanks, questions, or small talk)\n"
             "- web_search\n"
             "- open_app\n"
             "- close_app\n"
             "- analyze_screen\n"
+            "- generate_code (only if the user asks to write, create, or generate code)\n"
             "- sleep\n"
             "- exit\n\n"
-            "**DO NOT** explain your answer, greet the user, or say anything else — ONLY respond with valid JSON.\n"
-            "If it's just a general chat message, return:\n"
-            "[ {{ \"intent\": \"general_chat\", \"value\": \"original user message\" }} ]\n"
+            "**Only** use `generate_code` if the user is explicitly asking for code. Do not assume it from polite phrases like 'thank you' or 'good job'.\n"
+            "If unsure, default to `general_chat`.\n"
+            "Example response:\n"
+            "[ { \"intent\": \"general_chat\", \"value\": \"thank you\" } ]"
         )
-
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-4o",
@@ -141,7 +141,8 @@ class VoiceListener(QThread):
 
             elif intent == "general_chat":
                 final_response += get_gpt_response(value) + "\n"
-
+            elif intent == "generate_code":
+                final_response += generate_code_snippet(value) + "\n"
         return final_response.strip()
 
 # Define AI Identity
@@ -399,6 +400,68 @@ def close_application(app_name):
 
     print(f"Joe AI: {screen_description}")
     speak_text(screen_description)
+
+def generate_code_snippet(prompt):
+    """Generates code using GPT, saves it to Desktop, opens in VS Code with a descriptive filename."""
+    try:
+        speak_text("Sure, writing your code now.")
+        print("Joe AI: Generating code...")
+
+        # Prompt GPT to return filename + extension + code
+        code_prompt = (
+            f"The user asked: \"{prompt}\"\n\n"
+            f"Generate a complete, runnable code script based on the user's request.\n"
+            f"Respond ONLY with a single-line JSON object like this:\n"
+            f'{{ "extension": "py", "filename": "calculator_app", "code": "<FULL CODE HERE with escaped characters>" }}\n\n'
+            f"Do not use markdown, and no explanations. ONLY valid JSON on one line."
+        )
+
+        conversation_history.append({"role": "user", "content": code_prompt})
+        response = openai.ChatCompletion.create(
+            model="gpt-4o",
+            messages=conversation_history
+        )
+        content = response['choices'][0]['message']['content']
+
+        # Extract JSON object
+        match = re.search(r'{.*}', content, re.DOTALL)
+        if not match:
+            raise ValueError("Could not extract a JSON object from the response.")
+
+        code_data = json.loads(match.group())
+
+        extension = code_data.get("extension", "txt").strip()
+        raw_code = code_data.get("code", "").strip()
+        filename = code_data.get("filename", "generated_script").strip()
+
+        # Format filename safely
+        filename = re.sub(r"[^\w\- ]", "", filename).replace(" ", "_").lower()
+
+        # Properly decode escaped characters (\n, \t, etc.)
+        code = bytes(raw_code, "utf-8").decode("unicode_escape")
+
+        # Save path
+        desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+        if not os.path.exists(desktop_path):
+            os.makedirs(desktop_path)
+
+        file_path = os.path.join(desktop_path, f"{filename}.{extension}")
+
+        # Save code to file
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(code)
+
+        os.system(f'code "{file_path}"')  # Open with VS Code
+
+        speak_text(f"I saved your {filename.replace('_', ' ')} code on the desktop.")
+        return f"Code saved and opened as {filename}.{extension} on your Desktop."
+
+    except Exception as e:
+        error_msg = f"Joe AI: Failed to generate code — {e}"
+        print(error_msg)
+        speak_text("Something went wrong while generating your code.")
+        return error_msg
+
 
 def get_gpt_response(user_query):
     """Handles general queries using GPT-4 and cleans Markdown formatting for TTS."""
