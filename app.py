@@ -451,8 +451,13 @@ def generate_code_snippet(prompt):
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(code)
 
-        os.system(f'code "{file_path}"')  # Open with VS Code
-
+        # Try to open with VS Code, or prompt to install it
+        try:
+            os.system(f'code "{file_path}"')
+        except Exception:
+            speak_text("I couldn't find Visual Studio Code on your system. Let me open the download page for you.")
+            webbrowser.open("https://code.visualstudio.com/download")
+            
         speak_text(f"I saved your {filename.replace('_', ' ')} code on the desktop.")
         return f"Code saved and opened as {filename}.{extension} on your Desktop."
 
