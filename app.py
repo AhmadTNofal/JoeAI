@@ -184,24 +184,26 @@ def clean_markdown(text):
     text = text.replace("\n", " ")  # Replace new lines with spaces
     return text.strip()
 
-def transcribe_speech(timeout=10):
-    """Capture speech input and transcribe it."""
+def transcribe_speech(self, timeout=10, retries=2):
     recognizer = sr.Recognizer()
+    recognizer.pause_threshold = 1.5
     try:
         with sr.Microphone() as source:
-            print("Listening...")
-            audio = recognizer.listen(source, timeout=timeout)
-            text = recognizer.recognize_google(audio).lower().strip()
-            print(f"You said: {text}")
-            return text
-    except sr.UnknownValueError:
-        return None
-    except sr.RequestError:
-        print("Error with speech recognition service.")
-        return None
+            recognizer.adjust_for_ambient_noise(source, duration=0.5)
+            for attempt in range(retries):
+                try:
+                    self.log_message.emit("Listening...")
+                    audio = recognizer.listen(source, timeout=timeout, phrase_time_limit=15)
+                    text = recognizer.recognize_google(audio).lower().strip()
+                    self.log_message.emit(f"You said: {text}")
+                    return text
+                except sr.WaitTimeoutError:
+                    self.log_message.emit("Listening timed out.")
+                except sr.UnknownValueError:
+                    self.log_message.emit("Didn't catch that. Listening again...")
     except Exception as e:
-        print(f"Error: {e}")
-        return None
+        self.log_message.emit(f"Mic error: {e}")
+    return None
 
 def listen_for_wake_word():
     """Continuously listens for 'Hey Joe' to wake up."""
