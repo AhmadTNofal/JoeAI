@@ -35,7 +35,7 @@ class VoiceListener(QThread):
                 text = self.transcribe_speech(timeout=5)
                 if text and WAKE_WORD in text:
                     self.log_message.emit("I'm listening!")
-                    self.speech_detected.emit("I'm listening!")
+                    speak_text("I'm listening.")
                     self.user_speaking.emit(True)
                     self.ai_speaking.emit(False)
                     sleep_mode = False
