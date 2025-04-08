@@ -14,6 +14,7 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal
 import sys
 import re
 import cv2
+import json
 
 # Set your OpenAI API key
 openai.api_key = "sk-tbtbdjXN0PNeKVX8x6oXJFABUkwYsEeOj9TinWn3jOT3BlbkFJuGto6skfATpazIFkDBnEr1JtKDe0ykgJkavseRQP0A"
@@ -71,34 +72,77 @@ class VoiceListener(QThread):
 
     def process_command(self, command):
         global sleep_mode
-        if SLEEP_WORD in command:
-                print("Joe AI: Going back to sleep.")
+
+        intent_prompt = (
+            f"You are Joe AI. The user said: \"{command}\".\n\n"
+            "Your task is to extract user intent from this request.\n"
+            "Return ONLY a JSON array of objects, like this:\n"
+            "[\n"
+            "  {{ \"intent\": \"open_app\", \"value\": \"Spotify\" }},\n"
+            "  {{ \"intent\": \"web_search\", \"value\": \"lofi music\" }}\n"
+            "]\n\n"
+            "Valid intents:\n"
+            "- general_chat\n"
+            "- web_search\n"
+            "- open_app\n"
+            "- close_app\n"
+            "- analyze_screen\n"
+            "- sleep\n"
+            "- exit\n\n"
+            "**DO NOT** explain your answer, greet the user, or say anything else — ONLY respond with valid JSON.\n"
+            "If it's just a general chat message, return:\n"
+            "[ {{ \"intent\": \"general_chat\", \"value\": \"original user message\" }} ]\n"
+        )
+
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-4o",
+                messages=conversation_history + [{"role": "user", "content": intent_prompt}]
+            )
+            import json
+            content = response['choices'][0]['message']['content'].strip()
+
+            # Make sure the content looks like JSON before parsing
+            if not content.startswith("[") or "intent" not in content:
+                raise ValueError("Invalid intent structure")
+
+            actions = json.loads(content)
+
+        except Exception as e:
+            self.log_message.emit(f"Intent parsing failed, falling back to GPT: {e}")
+            return get_gpt_response(command)
+
+        # Execute each action in order
+        final_response = ""
+        for action in actions:
+            intent = action.get("intent")
+            value = action.get("value", "")
+
+            if intent == "sleep":
                 speak_text("Going back to sleep.")
                 sleep_mode = True
-                return  # Go back to wake mode
+                return "Going back to sleep."
 
-        elif EXIT_WORD in command:
-            print("Joe AI: Shutting down.")
-            speak_text("Shutting down.")
-            os._exit(0)  # Force exit
+            elif intent == "exit":
+                speak_text("Shutting down.")
+                os._exit(0)
 
-        elif SEARCH_WORD in command:
-            query = command.replace(SEARCH_WORD, "").strip()
-            result = search_web(query)
+            elif intent == "web_search":
+                final_response += search_web(value) + "\n"
 
-        elif SCREEN_WORD in command:
-            return analyze_screen()
+            elif intent == "open_app":
+                final_response += open_application(value) + "\n"
 
-        elif "open" in command:
-            app_name = command.replace("open", "").strip()
-            result = open_application(app_name)
+            elif intent == "close_app":
+                final_response += close_application(value) + "\n"
 
-        elif "close" in command:
-            app_name = command.replace("close", "").strip()
-            result = close_application(app_name)
+            elif intent == "analyze_screen":
+                final_response += analyze_screen(value) + "\n"
 
-        else:
-            result = get_gpt_response(command)
+            elif intent == "general_chat":
+                final_response += get_gpt_response(value) + "\n"
+
+        return final_response.strip()
 
 # Define AI Identity
 conversation_history = [
