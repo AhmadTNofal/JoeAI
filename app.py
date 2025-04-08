@@ -15,6 +15,9 @@ import sys
 import re
 import cv2
 import json
+import docx
+import urllib.parse
+
 
 # Set your OpenAI API key
 openai.api_key = "sk-tbtbdjXN0PNeKVX8x6oXJFABUkwYsEeOj9TinWn3jOT3BlbkFJuGto6skfATpazIFkDBnEr1JtKDe0ykgJkavseRQP0A"
@@ -74,26 +77,26 @@ class VoiceListener(QThread):
         global sleep_mode
 
         intent_prompt = (
-            f"You are Joe AI. The user said: \"{command}\".\n\n"
-            "Identify the user's intent clearly. Respond with ONLY a JSON array of objects. Each object should follow this format:\n"
-            "[\n"
-            "  { \"intent\": \"open_app\", \"value\": \"Spotify\" },\n"
-            "  { \"intent\": \"web_search\", \"value\": \"lofi music\" }\n"
-            "]\n\n"
-            "Valid intents:\n"
-            "- general_chat (for greetings, thanks, questions, or small talk)\n"
-            "- web_search\n"
-            "- open_app\n"
-            "- close_app\n"
-            "- analyze_screen\n"
-            "- generate_code (only if the user asks to write, create, or generate code)\n"
-            "- sleep\n"
-            "- exit\n\n"
-            "**Only** use `generate_code` if the user is explicitly asking for code. Do not assume it from polite phrases like 'thank you' or 'good job'.\n"
-            "If unsure, default to `general_chat`.\n"
-            "Example response:\n"
-            "[ { \"intent\": \"general_chat\", \"value\": \"thank you\" } ]"
-        )
+                    f"You are Joe AI. The user said: \"{command}\".\n\n"
+                    "Identify the user's intent clearly. Respond with ONLY a JSON array of objects. Each object should follow this format:\n"
+                    "[\n"
+                    "  { \"intent\": \"generate_document\", \"value\": \"write a report about the sun with harvard references\" }\n"
+                    "]\n\n"
+                    "Valid intents:\n"
+                    "- general_chat (for greetings, thanks, questions, or small talk)\n"
+                    "- web_search\n"
+                    "- open_app\n"
+                    "- close_app\n"
+                    "- analyze_screen\n"
+                    "- generate_code (only if the user asks to write, create, or generate code)\n"
+                    "- generate_document (for reports, articles, essays, etc.)\n"
+                    "- sleep\n"
+                    "- exit\n\n"
+                    "Use `generate_document` if the user says write/generate/create a report, article, essay, document, or mentions references or citations.\n"
+                    "**Only** use `generate_code` if the user is explicitly asking for code.\n"
+                    "Example: [ { \"intent\": \"generate_document\", \"value\": \"write a report on the sun with references\" } ]"
+                )
+
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-4o",
@@ -141,8 +144,12 @@ class VoiceListener(QThread):
 
             elif intent == "general_chat":
                 final_response += get_gpt_response(value) + "\n"
+
             elif intent == "generate_code":
                 final_response += generate_code_snippet(value) + "\n"
+
+            elif intent == "generate_document":
+                final_response += generate_document(value) + "\n"
         return final_response.strip()
 
 # Define AI Identity
@@ -467,6 +474,86 @@ def generate_code_snippet(prompt):
         speak_text("Something went wrong while generating your code.")
         return error_msg
 
+def generate_document(prompt):
+    try:
+        speak_text("Writing your document.")
+        print("Joe AI: Generating document...")
+
+        # Ask GPT to write the document content
+        doc_prompt = (
+            f"You are a professional writer. Based on the user's request:\n\n"
+            f"'{prompt}'\n\n"
+            f"Generate a well-written document. Include clear sections, paragraphs, and titles. "
+            f"If references are requested (APA, MLA, Chicago, numbered, etc.), include them clearly at the end. "
+            f"Respond with plain text — no markdown formatting."
+        )
+
+        # Don't add to history — keep it private
+        temp_history = conversation_history.copy()
+        temp_history.append({"role": "user", "content": doc_prompt})
+
+        response = openai.ChatCompletion.create(
+            model="gpt-4o",
+            messages=temp_history
+        )
+        content = response['choices'][0]['message']['content'].strip()
+
+        # Ask GPT to generate a suitable filename
+        title_prompt = (
+            f"Generate a short, clean filename for a document based on this prompt:\n"
+            f"'{prompt}'\n"
+            f"Respond with a single line like this: document_title"
+        )
+        title_response = openai.ChatCompletion.create(
+            model="gpt-4o",
+            messages=temp_history + [{"role": "user", "content": title_prompt}]
+        )
+        title = title_response['choices'][0]['message']['content'].strip()
+        title = re.sub(r'[\\/*?:"<>|]', "", title)
+
+        if not title.endswith(".docx"):
+            title += ".docx"
+
+        # Format and write the document
+        paragraphs = content.split('\n\n')
+        doc = docx.Document()
+        for para in paragraphs:
+            doc.add_paragraph(para.strip())
+
+        # Save to Desktop
+        desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+        if not os.path.exists(desktop_path):
+            os.makedirs(desktop_path)
+
+        file_path = os.path.join(desktop_path, title)
+        doc.save(file_path)
+
+        # Open references if requested in any form
+        if any(word in prompt.lower() for word in ["reference", "sources", "bibliography", "apa", "mla", "chicago", "citation"]):
+            # Try to extract direct URLs
+            urls = re.findall(r'https?://[^\s\)\]]+', content)
+            for url in urls:
+                webbrowser.open(url)
+
+            # Extract citation-like lines and search them on Google Scholar
+            lines = content.split("\n")
+            for line in lines:
+                if any(keyword in line.lower() for keyword in ["et al", ".", "doi", "vol", "journal", "pp", "https"]):
+                    search_query = re.sub(r'[^a-zA-Z0-9\s\-:.]', '', line.strip())
+                    if len(search_query.split()) > 3:  # avoid short junk
+                        scholar_url = f"https://scholar.google.com/scholar?q={urllib.parse.quote(search_query)}"
+                        webbrowser.open(scholar_url)
+
+        speak_text("Your document is ready.")
+        os.startfile(file_path)
+
+        return f"Document saved as '{title}' and opened."
+
+    except Exception as e:
+        error_msg = f"Failed to generate document — {e}"
+        print(f"Joe AI: {error_msg}")
+        speak_text("Something went wrong while creating your document.")
+        return error_msg
 
 def get_gpt_response(user_query):
     """Handles general queries using GPT-4 and cleans Markdown formatting for TTS."""
