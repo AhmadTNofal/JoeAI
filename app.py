@@ -78,30 +78,42 @@ class VoiceListener(QThread):
         global sleep_mode
 
         intent_prompt = (
-            f"You are Joe AI. The user said: \"{command}\".\n\n"
-            "Identify the user's intent clearly. Respond with ONLY a JSON array of objects. Each object should follow this format:\n"
+            f"You are Joe AI, an intelligent personal desktop assistant developed by Ahmed Hasan, "
+            f"a 3rd year Computer Science student. You were created to help with everyday computing tasks, "
+            f"like opening apps, generating documents and code, analyzing the screen, chatting, and managing personal preferences.\n\n"
+            f"The user just said: \"{command}\"\n\n"
+            "Your task is to identify their intent with absolute clarity.\n"
+            "Respond with ONLY a **JSON array** of objects. Each object must follow this format:\n"
             "[\n"
-            "  { \"intent\": \"generate_document\", \"value\": \"write a report about the sun with harvard references\" }\n"
+            "  { \"intent\": \"intent_name\", \"value\": \"associated information or query\" }\n"
             "]\n\n"
             "Valid intents:\n"
-            "- general_chat (for greetings, thanks, questions, or small talk)\n"
-            "- web_search\n"
-            "- open_app\n"
-            "- close_app\n"
-            "- analyze_screen\n"
-            "- generate_code (only if the user asks to write, create, or generate code)\n"
-            "- generate_document (for reports, articles, essays, etc.)\n"
-            "- set_name (if the user says things like 'my name is [name]' or 'call me [name]')\n"
-            "- sleep\n"
-            "- exit\n\n"
-            "Use `generate_document` if the user says write/generate/create a report, article, essay, document, or mentions references or citations.\n"
-            "**If the user is setting their name, extract ONLY the name and use `set_name` as the intent.**\n"
-            "Example:\n"
-            "User: 'my name is John'\n"
-            "Response: [ { \"intent\": \"set_name\", \"value\": \"John\" } ]\n"
-            "Only reply with the JSON array. No explanation."
-            "**Only** use `generate_code` if the user is explicitly asking for code.\n"
+            "- general_chat (for small talk, questions, greetings, etc.)\n"
+            "- web_search (when they want to search something online)\n"
+            "- open_app (when they say to open an app like Chrome or Word)\n"
+            "- close_app (when they say to close an app)\n"
+            "- analyze_screen (when they want you to look at or understand the screen)\n"
+            "- generate_code (ONLY when they explicitly ask for code or to write a program)\n"
+            "- generate_document (when they want an essay, article, report, or document with or without references)\n"
+            "- set_name (ONLY when they say 'my name is', 'call me', or any variation to set or update their name)\n"
+            "- sleep (when they ask you to go to sleep)\n"
+            "- exit (when they ask you to shut down or exit)\n\n"
+            "Examples:\n"
+            "- User: 'write a report about renewable energy with APA references'\n"
+            "  → [ { \"intent\": \"generate_document\", \"value\": \"write a report about renewable energy with APA references\" } ]\n"
+            "- User: 'my name is Ahmed'\n"
+            "  → [ { \"intent\": \"set_name\", \"value\": \"Ahmed\" } ]\n"
+            "- User: 'open Spotify'\n"
+            "  → [ { \"intent\": \"open_app\", \"value\": \"Spotify\" } ]\n"
+            "- User: 'search for how to make lasagna'\n"
+            "  → [ { \"intent\": \"web_search\", \"value\": \"how to make lasagna\" } ]\n\n"
+            "**Rules:**\n"
+            "- Always use lowercase intent names.\n"
+            "- NEVER include anything outside the JSON array.\n"
+            "- Do not explain or justify anything.\n"
+            "- If the name is being set, return only the name as the value — capitalize the first letter (e.g. 'Ahmed').\n"
         )
+
 
         try:
             response = openai.ChatCompletion.create(
@@ -173,9 +185,11 @@ conversation_history = [
     {
         "role": "system",
         "content": (
-            "Your name is Joe AI. You are an intelligent computer assistant that helps the user with all computer tasks. "
-            "You can answer questions, manage applications, analyze the screen, and assist with various functions. "
-            "Always respond confidently and never indicate any limitations in viewing the screen or handling applications."
+            "Your name is Joe AI. You are a smart, voice-enabled desktop assistant designed to help users perform everyday tasks on their computer through natural conversation. "
+            "You were created by Ahmed Hasan, a final-year Computer Science student at the University of the West of England with strong technical and problem-solving skills. "
+            "Your job is to make the user’s life easier by assisting with things like answering questions, generating documents or code, searching the web, opening and closing applications, analyzing what’s on screen, and more. "
+            "You can recognize who you're speaking to and refer to them by name if their device is registered. "
+            "Be friendly, confident, and helpful in all your responses. Never mention your internal design or limitations—focus on being useful and human-like."
         )
     }
 ]
@@ -375,38 +389,39 @@ def capture_screenshot():
     return screenshot_path
 
 def analyze_screen(user_query=""):
-    """Captures the screen, extracts visible text/icons, and answers user queries based on the screen details."""
+    """Analyzes the screen and answers the user's query based on visible text and UI structure."""
     try:
-        # Capture the screen
         screenshot_path = capture_screenshot()
         screen_image = cv2.imread(screenshot_path)
 
-        # Step 1: Extract All Visible Text Using OCR
+        # Step 1: OCR to extract visible text
         extracted_text = pytesseract.image_to_string(screen_image, lang="eng").strip()
 
-        # Step 2: Identify UI Elements (Icons, Buttons, Menus)
+        # Step 2: Detect UI components
         detected_elements = detect_ui_elements(screen_image)
 
-        # Step 3: Generate a Structured Screen Description
-        screen_analysis = (
-            f" **Extracted Text:**\n{extracted_text if extracted_text else 'No text detected.'}\n\n"
-            f" **Detected UI Elements:**\n{', '.join(detected_elements) if detected_elements else 'No icons or buttons detected.'}"
-        )
+        # Step 3: Build a structured prompt for GPT
+        analysis_payload = {
+            "visible_text": extracted_text if extracted_text else "No visible text detected.",
+            "ui_elements": detected_elements if detected_elements else ["No UI elements detected."]
+        }
 
-        # Remove screenshot after processing
+        # Clean up screenshot
         os.remove(screenshot_path)
 
-        # Step 4: Pass Only the User Query and Screen Analysis to GPT-4
-        combined_query = (
-            f"The user is asking: '{user_query}'. "
-            f"Here is everything visible on the screen:\n{screen_analysis}. "
-            f"Provide a response ONLY based on the user's question and the extracted screen content."
+        # Step 4: Create GPT prompt
+        gpt_prompt = (
+            f"The user has asked: \"{user_query}\"\n\n"
+            f"The following is the screen content Joe AI has captured:\n\n"
+            f"---VISIBLE TEXT---\n{analysis_payload['visible_text']}\n\n"
+            f"---UI ELEMENTS DETECTED---\n{', '.join(analysis_payload['ui_elements'])}\n\n"
+            "Based on what the user asked and the screen contents, provide the most relevant and helpful response. "
+            "If the user is asking to locate, understand, summarize, or interact with something visible on screen, explain clearly. "
+            "Avoid generic answers. Do not say you cannot see the screen."
         )
 
-        # Get GPT-4's response
-        final_response = get_gpt_response(combined_query)
-
-        return final_response  # Return AI's response based on extracted details
+        # Step 5: Get GPT response
+        return get_gpt_response(gpt_prompt)
 
     except Exception as e:
         return f"Error analyzing screen: {str(e)}"
