@@ -19,6 +19,8 @@ import docx
 import urllib.parse
 import mysql.connector
 import wmi
+import win32gui
+import win32process
 
 # OpenAI API key
 openai.api_key = "sk-tbtbdjXN0PNeKVX8x6oXJFABUkwYsEeOj9TinWn3jOT3BlbkFJuGto6skfATpazIFkDBnEr1JtKDe0ykgJkavseRQP0A"
@@ -444,53 +446,66 @@ def detect_ui_elements(image):
         return []
 
 def close_application(app_name):
-    """Closes an application based on process name or window title."""
+    """Closes a main application window or its core process."""
     app_name = app_name.lower().strip()
     closed = False
 
-    try:
-        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-            try:
-                process_name = proc.info['name'].lower() if proc.info['name'] else ""
-                cmdline = " ".join(proc.info['cmdline']).lower() if proc.info['cmdline'] else ""
+    # Background helpers to ignore (extendable)
+    ignore_processes = [
+        "steamwebhelper.exe", "runtimebroker.exe", "shellexperiencehost.exe",
+        "msedgewebview2.exe", "searchui.exe", "searchapp.exe"
+    ]
 
-                if app_name in process_name or app_name in cmdline:
+    try:
+        # Step 1: Try to match real application processes first
+        for proc in psutil.process_iter(['pid', 'name', 'exe']):
+            try:
+                proc_name = (proc.info['name'] or '').lower()
+                exe_name = os.path.basename(proc.info['exe'] or '').lower()
+
+                if any(ignored in exe_name for ignored in ignore_processes):
+                    continue
+
+                if app_name in proc_name or app_name in exe_name:
+                    friendly_name = os.path.splitext(proc_name)[0].replace('_', ' ').title()
                     proc.terminate()
-                    print(f"Joe AI: Closed {process_name}.")
-                    speak_text(f"Closed {process_name}.")
-                    closed = True
-                    break
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    proc.wait(timeout=3)
+                    speak_text(f"Closed {friendly_name}.")
+                    print(f"Joe AI: Closed {friendly_name}")
+                    return f"Closed {friendly_name}."
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, psutil.TimeoutExpired):
                 continue
 
-        if not closed:
-            return f"Joe AI: Could not find '{app_name}'."
+        # Step 2: Fallback - match visible window titles (ignoring browser noise)
+        def enum_window_callback(hwnd, results):
+            if win32gui.IsWindowVisible(hwnd):
+                title = win32gui.GetWindowText(hwnd).lower()
+                if app_name in title and not any(bad in title for bad in ["chrome", "edge", "firefox", "brave"]):
+                    _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                    try:
+                        proc = psutil.Process(pid)
+                        proc.terminate()
+                        proc.wait(timeout=3)
+                        results.append(title)
+                    except Exception:
+                        pass
+
+        found = []
+        win32gui.EnumWindows(enum_window_callback, found)
+
+        if found:
+            readable = found[0].title()
+            speak_text(f"Closed {readable}.")
+            print(f"Joe AI: Closed window titled: {readable}")
+            return f"Closed {readable}."
+
+        speak_text(f"I couldn't find anything called {app_name} to close.")
+        return f"I couldn't find anything called '{app_name}' to close."
+
     except Exception as e:
-        print(f"Error closing program: {e}")
-        return f"Joe AI: An error occurred closing '{app_name}'."
-
-    return f"Joe AI: Successfully closed '{app_name}'."
-
-
-
-    """Captures the screen and describes its contents."""
-    print("Joe AI: Capturing screen...")
-    screen_image = pyautogui.screenshot()
-    screen_text = pytesseract.image_to_string(screen_image).strip()
-
-    print("Joe AI: Detecting objects on the screen...")
-    model = YOLO("yolov5s")
-    results = model.predict(source=np.array(screen_image))
-    detected_objects = [result["name"] for result in results.pandas().xyxy[0].to_dict(orient="records")]
-
-    screen_description = "Here's what I see:\n"
-    if screen_text:
-        screen_description += f"- Visible text: \"{screen_text}\".\n"
-    if detected_objects:
-        screen_description += f"- Detected items: {', '.join(detected_objects)}.\n"
-
-    print(f"Joe AI: {screen_description}")
-    speak_text(screen_description)
+        print(f"Error closing app: {e}")
+        speak_text(f"Something went wrong while trying to close {app_name}.")
+        return f"An error occurred while trying to close '{app_name}'."
 
 def generate_code_snippet(prompt):
     """Generates code using GPT, saves it to Desktop, opens in VS Code with a descriptive filename."""
