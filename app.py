@@ -4,7 +4,6 @@ import openai
 import pyttsx3
 import pyautogui
 import pytesseract
-import numpy as np
 import speech_recognition as sr
 import psutil
 import time
