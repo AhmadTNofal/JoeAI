@@ -17,6 +17,8 @@ import cv2
 import json
 import docx
 import urllib.parse
+import mysql.connector
+import wmi
 
 # OpenAI API key
 openai.api_key = "sk-tbtbdjXN0PNeKVX8x6oXJFABUkwYsEeOj9TinWn3jOT3BlbkFJuGto6skfATpazIFkDBnEr1JtKDe0ykgJkavseRQP0A"
@@ -76,32 +78,36 @@ class VoiceListener(QThread):
         global sleep_mode
 
         intent_prompt = (
-                    f"You are Joe AI. The user said: \"{command}\".\n\n"
-                    "Identify the user's intent clearly. Respond with ONLY a JSON array of objects. Each object should follow this format:\n"
-                    "[\n"
-                    "  { \"intent\": \"generate_document\", \"value\": \"write a report about the sun with harvard references\" }\n"
-                    "]\n\n"
-                    "Valid intents:\n"
-                    "- general_chat (for greetings, thanks, questions, or small talk)\n"
-                    "- web_search\n"
-                    "- open_app\n"
-                    "- close_app\n"
-                    "- analyze_screen\n"
-                    "- generate_code (only if the user asks to write, create, or generate code)\n"
-                    "- generate_document (for reports, articles, essays, etc.)\n"
-                    "- sleep\n"
-                    "- exit\n\n"
-                    "Use `generate_document` if the user says write/generate/create a report, article, essay, document, or mentions references or citations.\n"
-                    "**Only** use `generate_code` if the user is explicitly asking for code.\n"
-                    "Example: [ { \"intent\": \"generate_document\", \"value\": \"write a report on the sun with references\" } ]"
-                )
+            f"You are Joe AI. The user said: \"{command}\".\n\n"
+            "Identify the user's intent clearly. Respond with ONLY a JSON array of objects. Each object should follow this format:\n"
+            "[\n"
+            "  { \"intent\": \"generate_document\", \"value\": \"write a report about the sun with harvard references\" }\n"
+            "]\n\n"
+            "Valid intents:\n"
+            "- general_chat (for greetings, thanks, questions, or small talk)\n"
+            "- web_search\n"
+            "- open_app\n"
+            "- close_app\n"
+            "- analyze_screen\n"
+            "- generate_code (only if the user asks to write, create, or generate code)\n"
+            "- generate_document (for reports, articles, essays, etc.)\n"
+            "- set_name (if the user says things like 'my name is [name]' or 'call me [name]')\n"
+            "- sleep\n"
+            "- exit\n\n"
+            "Use `generate_document` if the user says write/generate/create a report, article, essay, document, or mentions references or citations.\n"
+            "**If the user is setting their name, extract ONLY the name and use `set_name` as the intent.**\n"
+            "Example:\n"
+            "User: 'my name is John'\n"
+            "Response: [ { \"intent\": \"set_name\", \"value\": \"John\" } ]\n"
+            "Only reply with the JSON array. No explanation."
+            "**Only** use `generate_code` if the user is explicitly asking for code.\n"
+        )
 
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-4o",
                 messages=conversation_history + [{"role": "user", "content": intent_prompt}]
             )
-            import json
             content = response['choices'][0]['message']['content'].strip()
 
             # Make sure the content looks like JSON before parsing
@@ -149,6 +155,17 @@ class VoiceListener(QThread):
 
             elif intent == "generate_document":
                 final_response += generate_document(value) + "\n"
+
+            elif intent == "set_name":
+                serial_number = get_serial_number()
+                name = value.strip().title()
+                if serial_number and name:
+                    set_user_name(serial_number, name)
+                    final_response += f"Got it, I'll call you {name} from now on.\n"
+                    speak_text(f"Got it, I'll call you {name} from now on.")
+                else:
+                    final_response += "Sorry, I couldn't save your name."
+                    speak_text("Sorry, I couldn't save your name.")
         return final_response.strip()
 
 # Define AI Identity
@@ -171,9 +188,62 @@ SEARCH_WORD = "search for"
 SCREEN_WORD = "screen"
 sleep_mode = True
 
+
+def get_serial_number():
+    try:
+        c = wmi.WMI()
+        for bios in c.Win32_BIOS():
+            return bios.SerialNumber.strip()
+    except Exception as e:
+        print("Failed to get serial number:", e)
+        return None
+
+def get_user_name(serial_number):
+    try:
+        conn = mysql.connector.connect(
+            host="localhost",
+            user="root",
+            password="a1h2m3e4d5",
+            database="chatbot_user_identification"
+        )
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM user_profiles WHERE serial_number = %s", (serial_number,))
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return result[0] if result else None
+    except Exception as e:
+        print("DB error:", e)
+        return None
+
+def set_user_name(serial_number, name):
+    try:
+        conn = mysql.connector.connect(
+            host="localhost",
+            user="root",
+            password="a1h2m3e4d5",
+            database="chatbot_user_identification"
+        )
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO user_profiles (serial_number, name) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE name = %s",
+            (serial_number, name, name)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print("DB error:", e)
+
+USER_SERIAL = get_serial_number()
+USER_NAME = get_user_name(USER_SERIAL)
+
 def speak_text(text, rate=200):
-    """Convert text to speech."""
+    """Convert text to speech with user's name if available."""
     engine.setProperty("rate", rate)
+    if USER_NAME:
+        text = text.replace("Joe AI:", f"Joe AI: {USER_NAME},")
     engine.say(text)
     engine.runAndWait()
 
@@ -555,7 +625,6 @@ def generate_document(prompt):
         return error_msg
 
 def get_gpt_response(user_query):
-    """Handles general queries using GPT-4 and cleans Markdown formatting for TTS."""
     try:
         conversation_history.append({"role": "user", "content": user_query})
         response = openai.ChatCompletion.create(
@@ -563,16 +632,19 @@ def get_gpt_response(user_query):
             messages=conversation_history
         )
         gpt_response = response['choices'][0]['message']['content']
-        
-        # Clean Markdown before speaking the response
         plain_text_response = clean_markdown(gpt_response)
-        
+
+        # Add user's name if it exists
+        if USER_NAME:
+            plain_text_response = f"{USER_NAME}, {plain_text_response}"
+
         print(f"Joe AI: {plain_text_response}")
         speak_text(plain_text_response)
         return plain_text_response
     except Exception as e:
         print(f"Error communicating with GPT: {e}")
         return "I encountered an issue retrieving an answer."
+
 
 class JoeAIApp(QWidget):
     def __init__(self):
@@ -669,6 +741,13 @@ class SystemTrayApp(QSystemTrayIcon):
             self.show_app()
 
 if __name__ == "__main__":
+    if USER_NAME:
+        print(f"Welcome back, {USER_NAME}!")
+        speak_text(f"Welcome back, {USER_NAME}. Say Hey Joe to wake me up when you are ready.")
+    else:
+        print("Hello! I’m Joe AI.")
+        speak_text("Hello! I’m Joe AI. Say Hey Joe to wake me up.")
+
     app = QApplication(sys.argv)
     joe_ai = JoeAIApp()
     joe_ai.show()
