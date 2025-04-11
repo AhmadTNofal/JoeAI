@@ -203,7 +203,6 @@ SEARCH_WORD = "search for"
 SCREEN_WORD = "screen"
 sleep_mode = True
 
-
 def get_serial_number():
     try:
         c = wmi.WMI()
