@@ -674,7 +674,6 @@ def get_gpt_response(user_query):
         print(f"Error communicating with GPT: {e}")
         return "I encountered an issue retrieving an answer."
 
-
 class JoeAIApp(QWidget):
     def __init__(self):
         super().__init__()
