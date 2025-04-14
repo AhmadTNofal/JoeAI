@@ -15,7 +15,6 @@ class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(b"<h1>You may close this window.</h1>")
 
 def get_access_token():
-
     auth_url = (
         f"https://login.microsoftonline.com/common/oauth2/v2.0/authorize?"
         f"client_id={client_id}&response_type=code&redirect_uri={redirect_uri}"
@@ -26,7 +25,6 @@ def get_access_token():
     server.handle_request()
     code = server.auth_code
 
-    # Step 2: Token exchange
     token_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
     token_data = {
         "client_id": client_id,
@@ -39,3 +37,24 @@ def get_access_token():
 
     response = requests.post(token_url, data=token_data).json()
     return response.get("access_token")
+
+def create_email_draft(access_token, subject, body_content):
+    url = "https://graph.microsoft.com/v1.0/me/messages"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "subject": subject,
+        "body": {
+            "contentType": "Text",
+            "content": body_content
+        }
+    }
+
+    response = requests.post(url, headers=headers, json=data)
+    if response.status_code == 201:
+        return True, response.json().get("id")
+    else:
+        print("❌ Failed to create draft:", response.status_code, response.text)
+        return False, None

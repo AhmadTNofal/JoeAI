@@ -23,6 +23,8 @@ import win32process
 import win32com.client
 from microsoft_auth import get_access_token
 from todo_api import add_task, get_tasks, delete_task
+from email_api import create_email_draft
+import requests
 
 # OpenAI API key
 openai.api_key = "sk-tbtbdjXN0PNeKVX8x6oXJFABUkwYsEeOj9TinWn3jOT3BlbkFJuGto6skfATpazIFkDBnEr1JtKDe0ykgJkavseRQP0A"
@@ -82,51 +84,55 @@ class VoiceListener(QThread):
         global sleep_mode
 
         intent_prompt = (
-                f"You are Joe AI, an intelligent personal desktop assistant developed by Ahmed Hasan, "
-                f"a 3rd year Computer Science student. You were created to help with everyday computing tasks, "
-                f"like opening apps, generating documents and code, analyzing the screen, chatting, editing Word documents, "
-                f"and managing personal preferences.\n\n"
-                f"The user just said: \"{command}\"\n\n"
-                "Your task is to clearly identify their intent.\n"
-                "Respond with ONLY a **JSON array** of one or more objects.\n"
-                "Each object must follow this format:\n\n"
-                "[\n"
-                "  { \"intent\": \"intent_name\", \"value\": \"associated information or query\" }\n"
-                "]\n\n"
-                "Valid intents:\n"
-                "- general_chat (for small talk, questions, greetings, etc.)\n"
-                "- web_search (for searching online)\n"
-                "- open_app (to open an application)\n"
-                "- close_app (to close an application)\n"
-                "- analyze_screen (to analyze the screen contents)\n"
-                "- generate_code (ONLY when explicitly asked for code)\n"
-                "- generate_document (for generating documents, reports, essays, etc.)\n"
-                "- set_name (if the user says 'my name is', 'call me', etc.)\n"
-                "- edit_document (for editing an open Word document; the value should be a JSON object with keys 'action', 'target', and 'text')\n"
-                "- todo (for Microsoft To Do commands; the value should be a JSON object with keys 'action' and 'value')\n"
-                "- sleep (to go to sleep)\n"
-                "- exit (to shut down)\n\n"
-                "Examples:\n"
-                "- User: 'write a report about renewable energy with APA references'\n"
-                "  → [ { \"intent\": \"generate_document\", \"value\": \"write a report about renewable energy with APA references\" } ]\n"
-                "- User: \"add finish my AI project to my to-do\"\n"
-                "→ [ { \"intent\": \"todo\", \"value\": { \"action\": \"add\", \"value\": \"finish my AI project\" } } ]\n"
-                "- User: \"what do I need to do today?\"\n"
-                "→ [ { \"intent\": \"todo\", \"value\": { \"action\": \"list\", \"value\": \"today\" } } ]\n"
-                "- User: \"delete grocery shopping from my to-do\"\n"
-                "→ [ { \"intent\": \"todo\", \"value\": { \"action\": \"delete\", \"value\": \"grocery shopping\" } } ]\n"
-                "- User: 'my name is Ahmed'\n"
-                "  → [ { \"intent\": \"set_name\", \"value\": \"Ahmed\" } ]\n"
-                "- User: 'open Spotify'\n"
-                "  → [ { \"intent\": \"open_app\", \"value\": \"Spotify\" } ]\n"
-                "- User: 'fix the conclusion and make it match the structure of the rest of the document'\n"
-                "  → [ { \"intent\": \"edit_document\", \"value\": { \"action\": \"replace\", \"target\": \"conclusion\", \"text\": \"fix the conclusion and make it match the structure of the rest of the document\" } } ]\n\n"
-                "**Rules:**\n"
-                "- Always use lowercase intent names.\n"
-                "- NEVER include anything outside the JSON array.\n"
-                "- If the intent is `set_name`, the value must be just the name (capitalized, e.g., \"Ahmed\").\n"
-                "- For `edit_document`, the value must be a nested JSON object with the keys: 'action', 'target', and 'text'."
-            )
+            f"You are Joe AI, an intelligent personal desktop assistant developed by Ahmed Hasan, "
+            f"a 3rd year Computer Science student. You were created to help with everyday computing tasks, "
+            f"like opening apps, generating documents and code, analyzing the screen, chatting, editing Word documents, "
+            f"and managing personal preferences.\n\n"
+            f"The user just said: \"{command}\"\n\n"
+            "Your task is to clearly identify their intent.\n"
+            "Return a valid JSON array of intent objects like this:\n\n"
+            "[\n"
+            "  { \"intent\": \"intent_name\", \"value\": \"associated information or query\" }\n"
+            "]\n\n"
+            "Valid intents:\n"
+            "- general_chat (for small talk, questions, greetings, etc.)\n"
+            "- web_search (for searching online)\n"
+            "- open_app (to open an application)\n"
+            "- close_app (to close an application)\n"
+            "- analyze_screen (to analyze the screen contents)\n"
+            "- generate_code (ONLY when explicitly asked for code)\n"
+            "- generate_document (for generating documents, reports, essays, etc.)\n"
+            "- set_name (if the user says 'my name is', 'call me', etc.)\n"
+            "- edit_document (for editing an open Word document; value must be a JSON object with keys 'action', 'target', and 'text')\n"
+            "- todo (for Microsoft To Do commands; value must be a JSON object with keys 'action' and 'value')\n"
+            "- draft_email (for drafting emails via Outlook; value should be the email topic or instruction)\n"
+            "- sleep (to go to sleep)\n"
+            "- exit (to shut down)\n\n"
+            "Examples:\n"
+            "- User: 'write a report about renewable energy with APA references'\n"
+            "  → [ { \"intent\": \"generate_document\", \"value\": \"write a report about renewable energy with APA references\" } ]\n"
+            "- User: \"add finish my AI project to my to-do\"\n"
+            "  → [ { \"intent\": \"todo\", \"value\": { \"action\": \"add\", \"value\": \"finish my AI project\" } } ]\n"
+            "- User: \"what do I need to do today?\"\n"
+            "  → [ { \"intent\": \"todo\", \"value\": { \"action\": \"list\", \"value\": \"today\" } } ]\n"
+            "- User: \"delete grocery shopping from my to-do\"\n"
+            "  → [ { \"intent\": \"todo\", \"value\": { \"action\": \"delete\", \"value\": \"grocery shopping\" } } ]\n"
+            "- User: 'write an email to my professor explaining I’ll be late for submission'\n"
+            "  → [ { \"intent\": \"draft_email\", \"value\": \"write an email to my professor explaining I’ll be late for submission\" } ]\n"
+            "- User: 'my name is Ahmed'\n"
+            "  → [ { \"intent\": \"set_name\", \"value\": \"Ahmed\" } ]\n"
+            "- User: 'open Spotify'\n"
+            "  → [ { \"intent\": \"open_app\", \"value\": \"Spotify\" } ]\n"
+            "- User: 'fix the conclusion and make it match the structure of the rest of the document'\n"
+            "  → [ { \"intent\": \"edit_document\", \"value\": { \"action\": \"replace\", \"target\": \"conclusion\", \"text\": \"fix the conclusion and make it match the structure of the rest of the document\" } } ]\n\n"
+            "Rules:\n"
+            "- Only return a valid JSON array.\n"
+            "- Do NOT include any explanation or extra text.\n"
+            "- Use lowercase for all intent names.\n"
+            "- If the intent is `set_name`, the value must be just the name (capitalized, e.g., \"Ahmed\").\n"
+            "- For `edit_document`, the value must be a nested object with 'action', 'target', and 'text'."
+        )
+
 
         try:
             response = openai.ChatCompletion.create(
@@ -223,6 +229,49 @@ class VoiceListener(QThread):
                     else:
                         final_response += " Invalid To Do command structure.\n"
                         speak_text("I couldn't understand your To Do command.")
+            elif intent == "draft_email":
+                try:
+                    global access_token
+                    if not access_token:
+                        access_token = get_access_token()
+
+                    # Ask GPT to generate structured email JSON
+                    gpt_draft_prompt = (
+                        f"The user said: \"{value}\"\n\n"
+                        f"Generate a professional Outlook email. "
+                        f"Return ONLY valid JSON like this:\n"
+                        f'{{ "subject": "Subject here", "body": "Full message here" }}\n\n'
+                        f"Do NOT include markdown, no explanations — just the JSON."
+                    )
+
+                    response = openai.ChatCompletion.create(
+                        model="gpt-4o",
+                        messages=conversation_history + [{"role": "user", "content": gpt_draft_prompt}]
+                    )
+                    content = response["choices"][0]["message"]["content"].strip()
+                    match = re.search(r'{.*}', content, re.DOTALL)
+                    if not match:
+                        raise ValueError("No valid email JSON found.")
+
+                    email_json = json.loads(match.group())
+                    subject = email_json.get("subject", "Draft Email")
+                    body = email_json.get("body", "")
+
+                    # Create draft via Microsoft Graph
+                    success, draft_id = create_email_draft(access_token, subject, body)
+                    if success:
+                        # ✅ No reading email aloud — just redirect
+                        speak_text("Your draft email is ready.")
+                        webbrowser.open(f"https://outlook.office.com/mail/drafts/id/{draft_id}")
+                        return "Your email draft has been created and opened in Outlook."
+                    else:
+                        speak_text("Something went wrong while creating the email draft.")
+                        return "I couldn't create the email draft."
+
+                except Exception as e:
+                    speak_text("I couldn't draft the email.")
+                    return f"Failed to create draft: {str(e)}"
+
 
         return final_response.strip()
 
@@ -248,6 +297,27 @@ SEARCH_WORD = "search for"
 SCREEN_WORD = "screen"
 sleep_mode = True
 access_token = None
+
+def create_email_draft(access_token, subject, body_content):
+    url = "https://graph.microsoft.com/v1.0/me/messages"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "subject": subject,
+        "body": {
+            "contentType": "Text",
+            "content": body_content
+        }
+    }
+
+    response = requests.post(url, headers=headers, json=data)
+    if response.status_code == 201:
+        return True, response.json().get("id")
+    else:
+        print("❌ Failed to create draft:", response.status_code, response.text)
+        return False, None
 
 def handle_todo_command_intent(action, value):
     global access_token
