@@ -20,6 +20,7 @@ import mysql.connector
 import wmi
 import win32gui
 import win32process
+import win32com.client
 
 # OpenAI API key
 openai.api_key = "sk-tbtbdjXN0PNeKVX8x6oXJFABUkwYsEeOj9TinWn3jOT3BlbkFJuGto6skfATpazIFkDBnEr1JtKDe0ykgJkavseRQP0A"
@@ -79,42 +80,44 @@ class VoiceListener(QThread):
         global sleep_mode
 
         intent_prompt = (
-            f"You are Joe AI, an intelligent personal desktop assistant developed by Ahmed Hasan, "
-            f"a 3rd year Computer Science student. You were created to help with everyday computing tasks, "
-            f"like opening apps, generating documents and code, analyzing the screen, chatting, and managing personal preferences.\n\n"
-            f"The user just said: \"{command}\"\n\n"
-            "Your task is to identify their intent with absolute clarity.\n"
-            "Respond with ONLY a **JSON array** of objects. Each object must follow this format:\n"
-            "[\n"
-            "  { \"intent\": \"intent_name\", \"value\": \"associated information or query\" }\n"
-            "]\n\n"
-            "Valid intents:\n"
-            "- general_chat (for small talk, questions, greetings, etc.)\n"
-            "- web_search (when they want to search something online)\n"
-            "- open_app (when they say to open an app like Chrome or Word)\n"
-            "- close_app (when they say to close an app)\n"
-            "- analyze_screen (when they want you to look at or understand the screen)\n"
-            "- generate_code (ONLY when they explicitly ask for code or to write a program)\n"
-            "- generate_document (when they want an essay, article, report, or document with or without references)\n"
-            "- set_name (ONLY when they say 'my name is', 'call me', or any variation to set or update their name)\n"
-            "- sleep (when they ask you to go to sleep)\n"
-            "- exit (when they ask you to shut down or exit)\n\n"
-            "Examples:\n"
-            "- User: 'write a report about renewable energy with APA references'\n"
-            "  → [ { \"intent\": \"generate_document\", \"value\": \"write a report about renewable energy with APA references\" } ]\n"
-            "- User: 'my name is Ahmed'\n"
-            "  → [ { \"intent\": \"set_name\", \"value\": \"Ahmed\" } ]\n"
-            "- User: 'open Spotify'\n"
-            "  → [ { \"intent\": \"open_app\", \"value\": \"Spotify\" } ]\n"
-            "- User: 'search for how to make lasagna'\n"
-            "  → [ { \"intent\": \"web_search\", \"value\": \"how to make lasagna\" } ]\n\n"
-            "**Rules:**\n"
-            "- Always use lowercase intent names.\n"
-            "- NEVER include anything outside the JSON array.\n"
-            "- Do not explain or justify anything.\n"
-            "- If the name is being set, return only the name as the value — capitalize the first letter (e.g. 'Ahmed').\n"
-        )
-
+                f"You are Joe AI, an intelligent personal desktop assistant developed by Ahmed Hasan, "
+                f"a 3rd year Computer Science student. You were created to help with everyday computing tasks, "
+                f"like opening apps, generating documents and code, analyzing the screen, chatting, editing Word documents, "
+                f"and managing personal preferences.\n\n"
+                f"The user just said: \"{command}\"\n\n"
+                "Your task is to clearly identify their intent.\n"
+                "Respond with ONLY a **JSON array** of one or more objects.\n"
+                "Each object must follow this format:\n\n"
+                "[\n"
+                "  { \"intent\": \"intent_name\", \"value\": \"associated information or query\" }\n"
+                "]\n\n"
+                "Valid intents:\n"
+                "- general_chat (for small talk, questions, greetings, etc.)\n"
+                "- web_search (for searching online)\n"
+                "- open_app (to open an application)\n"
+                "- close_app (to close an application)\n"
+                "- analyze_screen (to analyze the screen contents)\n"
+                "- generate_code (ONLY when explicitly asked for code)\n"
+                "- generate_document (for generating documents, reports, essays, etc.)\n"
+                "- set_name (if the user says 'my name is', 'call me', etc.)\n"
+                "- edit_document (for editing an open Word document; the value should be a JSON object with keys 'action', 'target', and 'text')\n"
+                "- sleep (to go to sleep)\n"
+                "- exit (to shut down)\n\n"
+                "Examples:\n"
+                "- User: 'write a report about renewable energy with APA references'\n"
+                "  → [ { \"intent\": \"generate_document\", \"value\": \"write a report about renewable energy with APA references\" } ]\n"
+                "- User: 'my name is Ahmed'\n"
+                "  → [ { \"intent\": \"set_name\", \"value\": \"Ahmed\" } ]\n"
+                "- User: 'open Spotify'\n"
+                "  → [ { \"intent\": \"open_app\", \"value\": \"Spotify\" } ]\n"
+                "- User: 'fix the conclusion and make it match the structure of the rest of the document'\n"
+                "  → [ { \"intent\": \"edit_document\", \"value\": { \"action\": \"replace\", \"target\": \"conclusion\", \"text\": \"fix the conclusion and make it match the structure of the rest of the document\" } } ]\n\n"
+                "**Rules:**\n"
+                "- Always use lowercase intent names.\n"
+                "- NEVER include anything outside the JSON array.\n"
+                "- If the intent is `set_name`, the value must be just the name (capitalized, e.g., \"Ahmed\").\n"
+                "- For `edit_document`, the value must be a nested JSON object with the keys: 'action', 'target', and 'text'."
+            )
 
         try:
             response = openai.ChatCompletion.create(
@@ -179,6 +182,28 @@ class VoiceListener(QThread):
                 else:
                     final_response += "Sorry, I couldn't save your name."
                     speak_text("Sorry, I couldn't save your name.")
+
+            elif intent == "edit_document":
+                edit_params = action.get("value")
+                if isinstance(edit_params, dict):
+                    ed_action = edit_params.get("action", "").strip().lower()
+                    ed_target = edit_params.get("target", "").strip().lower()
+                    ed_text = edit_params.get("text", "").strip()
+
+                    # If the action/target aren't valid but text is present, assume "replace document"
+                    if ed_text and (not ed_action or not ed_target):
+                        ed_action = "replace"
+                        ed_target = "document"
+
+                    if ed_action and ed_target and ed_text:
+                        result = edit_word_document(ed_action, ed_target, ed_text)
+                        final_response += result + "\n"
+                        speak_text(result)
+                    else:
+                        final_response += "Invalid edit instruction.\n"
+                        speak_text("Invalid edit instruction.")
+
+
         return final_response.strip()
 
 # Define AI Identity
@@ -275,25 +300,20 @@ def clean_markdown(text):
     text = text.replace("\n", " ")  # Replace new lines with spaces
     return text.strip()
 
-def transcribe_speech(self, timeout=10, retries=2):
+def transcribe_speech(_, timeout=10, retries=2):
     recognizer = sr.Recognizer()
     recognizer.pause_threshold = 1.5
     try:
         with sr.Microphone() as source:
             recognizer.adjust_for_ambient_noise(source, duration=0.5)
-            for attempt in range(retries):
+            for _ in range(retries):
                 try:
-                    self.log_message.emit("Listening...")
                     audio = recognizer.listen(source, timeout=timeout, phrase_time_limit=15)
-                    text = recognizer.recognize_google(audio).lower().strip()
-                    self.log_message.emit(f"You said: {text}")
-                    return text
-                except sr.WaitTimeoutError:
-                    self.log_message.emit("Listening timed out.")
-                except sr.UnknownValueError:
-                    self.log_message.emit("Didn't catch that. Listening again...")
+                    return recognizer.recognize_google(audio).lower().strip()
+                except (sr.WaitTimeoutError, sr.UnknownValueError):
+                    continue
     except Exception as e:
-        self.log_message.emit(f"Mic error: {e}")
+        print(f"Mic error: {e}")
     return None
 
 def listen_for_wake_word():
@@ -651,6 +671,64 @@ def generate_document(prompt):
         print(f"Joe AI: {error_msg}")
         speak_text("Something went wrong while creating your document.")
         return error_msg
+
+def edit_word_document(_, __, user_prompt):
+
+    try:
+        word = win32com.client.Dispatch("Word.Application")
+        word.Visible = True
+
+        best_doc = None
+        best_score = 0
+        best_text = ""
+
+        # Score documents by matching content with user_prompt
+        for doc in word.Documents:
+            text = doc.Range().Text.strip()
+            if not text:
+                continue
+            score = sum(1 for word in user_prompt.lower().split() if word in text.lower())
+            if score > best_score:
+                best_score = score
+                best_doc = doc
+                best_text = text
+
+        if not best_doc:
+            return "No open Word document matched your prompt."
+
+        # Ask GPT to rewrite/edit the doc based on the user's request
+        gpt_prompt = (
+            f"The user said: \"{user_prompt}\"\n\n"
+            f"Here is the full document content:\n\n"
+            f"{best_text}\n\n"
+            f"Apply the user's request by modifying the document appropriately. "
+            f"Only change what's needed, and don't add anything else. Return ONLY the final text. No notes, no explanation."
+        )
+
+        response = openai.ChatCompletion.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are a helpful AI assistant editing Word documents."},
+                {"role": "user", "content": gpt_prompt}
+            ]
+        )
+        new_text = response['choices'][0]['message']['content'].strip()
+
+        # Show edit in Word temporarily
+        original_text = best_doc.Range().Text
+        best_doc.Range().Text = new_text
+
+        # Ask for voice confirmation
+        speak_text("I made the changes. Do you want to keep them?")
+        confirmation = transcribe_speech(None, timeout=6, retries=1)
+        if confirmation and "yes" in confirmation.lower():
+            return "Changes applied to the document."
+        else:
+            best_doc.Range().Text = original_text
+            return "Okay, I reverted the document to its original state."
+
+    except Exception as e:
+        return f"Edit failed: {str(e)}"
 
 def get_gpt_response(user_query):
     try:
