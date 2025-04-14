@@ -437,7 +437,6 @@ def say_text(text, rate, interrupted_flag):
     engine.runAndWait()
     interrupted_flag.value = False
 
-
 def speak_text(text, rate=200):
     global sleep_mode
     interrupted = Value(ctypes.c_bool, False)
