@@ -21,6 +21,8 @@ import wmi
 import win32gui
 import win32process
 import win32com.client
+from microsoft_auth import get_access_token
+from todo_api import add_task, get_tasks, delete_task
 
 # OpenAI API key
 openai.api_key = "sk-tbtbdjXN0PNeKVX8x6oXJFABUkwYsEeOj9TinWn3jOT3BlbkFJuGto6skfATpazIFkDBnEr1JtKDe0ykgJkavseRQP0A"
@@ -101,11 +103,18 @@ class VoiceListener(QThread):
                 "- generate_document (for generating documents, reports, essays, etc.)\n"
                 "- set_name (if the user says 'my name is', 'call me', etc.)\n"
                 "- edit_document (for editing an open Word document; the value should be a JSON object with keys 'action', 'target', and 'text')\n"
+                "- todo (for Microsoft To Do commands; the value should be a JSON object with keys 'action' and 'value')\n"
                 "- sleep (to go to sleep)\n"
                 "- exit (to shut down)\n\n"
                 "Examples:\n"
                 "- User: 'write a report about renewable energy with APA references'\n"
                 "  → [ { \"intent\": \"generate_document\", \"value\": \"write a report about renewable energy with APA references\" } ]\n"
+                "- User: \"add finish my AI project to my to-do\"\n"
+                "→ [ { \"intent\": \"todo\", \"value\": { \"action\": \"add\", \"value\": \"finish my AI project\" } } ]\n"
+                "- User: \"what do I need to do today?\"\n"
+                "→ [ { \"intent\": \"todo\", \"value\": { \"action\": \"list\", \"value\": \"today\" } } ]\n"
+                "- User: \"delete grocery shopping from my to-do\"\n"
+                "→ [ { \"intent\": \"todo\", \"value\": { \"action\": \"delete\", \"value\": \"grocery shopping\" } } ]\n"
                 "- User: 'my name is Ahmed'\n"
                 "  → [ { \"intent\": \"set_name\", \"value\": \"Ahmed\" } ]\n"
                 "- User: 'open Spotify'\n"
@@ -202,7 +211,18 @@ class VoiceListener(QThread):
                     else:
                         final_response += "Invalid edit instruction.\n"
                         speak_text("Invalid edit instruction.")
-
+            elif intent == "todo":
+                todo_data = action.get("value", {})
+                if isinstance(todo_data, dict):
+                    todo_action = todo_data.get("action")
+                    todo_value = todo_data.get("value")
+                    if todo_action and todo_value:
+                        result = handle_todo_command_intent(todo_action, todo_value)
+                        final_response += result + "\n"
+                        speak_text(result)
+                    else:
+                        final_response += " Invalid To Do command structure.\n"
+                        speak_text("I couldn't understand your To Do command.")
 
         return final_response.strip()
 
@@ -227,6 +247,35 @@ EXIT_WORD = "exit"
 SEARCH_WORD = "search for"
 SCREEN_WORD = "screen"
 sleep_mode = True
+access_token = None
+
+def handle_todo_command_intent(action, value):
+    global access_token
+    if not access_token:
+        access_token = get_access_token()
+
+    if action == "add":
+        task_name = value.strip()
+        if add_task(access_token, task_name):
+            return f"Added '{task_name}' to your to-do list!"
+        else:
+            return "Couldn't add the task."
+
+    elif action == "list":
+        tasks = get_tasks(access_token)
+        if tasks:
+            return "Your tasks are:\n" + "\n".join(f"- {t}" for t in tasks)
+        else:
+            return "Your to-do list is empty."
+
+    elif action == "delete":
+        task_name = value.strip()
+        if delete_task(access_token, task_name):
+            return f"Deleted '{task_name}' from your tasks!"
+        else:
+            return "Couldn't find that task to delete."
+
+    return " I didn't understand your to-do request."
 
 def get_serial_number():
     try:
