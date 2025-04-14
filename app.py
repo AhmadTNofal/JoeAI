@@ -133,7 +133,6 @@ class VoiceListener(QThread):
             "- For `edit_document`, the value must be a nested object with 'action', 'target', and 'text'."
         )
 
-
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-4o",
