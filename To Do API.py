@@ -34,9 +34,9 @@ print("🌐 Opening browser for login...")
 webbrowser.open(auth_url)
 
 # 4. Wait for login and get code
-print("🔁 Waiting for authorization code...")
+print("Waiting for authorization code...")
 auth_code = start_server()
-print(f"✅ Code received: {auth_code}")
+print(f"Code received: {auth_code}")
 
 # 5. Exchange code for token
 token_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"

@@ -56,5 +56,5 @@ def create_email_draft(access_token, subject, body_content):
     if response.status_code == 201:
         return True, response.json().get("id")
     else:
-        print("❌ Failed to create draft:", response.status_code, response.text)
+        print(" Failed to create draft:", response.status_code, response.text)
         return False, None

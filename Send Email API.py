@@ -31,12 +31,12 @@ auth_url = (
     f"client_id={client_id}&response_type=code&redirect_uri={redirect_uri}"
     f"&response_mode=query&scope={' '.join(scopes)}&state=12345"
 )
-print("🔓 Opening browser to authenticate...")
+print("Opening browser to authenticate...")
 webbrowser.open(auth_url)
 
-print("🔁 Waiting for authorization...")
+print("Waiting for authorization...")
 auth_code = start_server()
-print("✅ Authorization code received!")
+print("Authorization code received!")
 
 # === Step 3: Exchange Code for Token ===
 token_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
@@ -53,10 +53,10 @@ token_response = requests.post(token_url, data=token_data).json()
 access_token = token_response.get("access_token")
 
 if not access_token:
-    print("❌ Failed to get access token:", token_response)
+    print("Failed to get access token:", token_response)
     exit()
 
-print("✅ Access token acquired!")
+print("Access token acquired!")
 
 # === Step 4: Create Email Draft ===
 headers = {
@@ -65,7 +65,7 @@ headers = {
 }
 
 email_data = {
-    "subject": "🚀 Draft Email from Joe AI",
+    "subject": "Draft Email from Joe AI",
     "body": {
         "contentType": "Text",
         "content": "Hi there,\n\nThis is a test draft email created using Microsoft Graph API and Joe AI!\n\nCheers,\nAhmed"
@@ -77,7 +77,7 @@ response = requests.post("https://graph.microsoft.com/v1.0/me/messages", headers
 
 if response.status_code == 201:
     draft_id = response.json().get("id")
-    print(f"✅ Draft created successfully! Draft ID: {draft_id}")
+    print(f"Draft created successfully! Draft ID: {draft_id}")
 else:
-    print(f"❌ Failed to create draft: {response.status_code}")
+    print(f"Failed to create draft: {response.status_code}")
     print(response.text)
