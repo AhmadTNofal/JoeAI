@@ -10,6 +10,7 @@ import time
 from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction, QTextEdit, QVBoxLayout, QWidget, QLabel, QPushButton, QHBoxLayout
 from PyQt5.QtGui import QIcon, QMovie
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtCore import QTimer
 import sys
 import re
 import cv2
@@ -38,48 +39,42 @@ class VoiceListener(QThread):
     speech_detected = pyqtSignal(str)
     user_speaking = pyqtSignal(bool)
     ai_speaking = pyqtSignal(bool)
-    log_message = pyqtSignal(str)
     ai_response = pyqtSignal(str)
-    
+
     def run(self):
         global sleep_mode
         while True:
             if sleep_mode:
                 text = self.transcribe_speech(timeout=5)
                 if text and WAKE_WORD in text:
-                    self.log_message.emit("I'm listening!")
                     speak_text("I'm listening.")
                     self.user_speaking.emit(True)
                     self.ai_speaking.emit(False)
                     sleep_mode = False
             else:
                 self.listen_for_commands()
-    
+
     def transcribe_speech(self, timeout=10):
         recognizer = sr.Recognizer()
         try:
             with sr.Microphone() as source:
-                self.log_message.emit("Listening...")
                 audio = recognizer.listen(source, timeout=timeout)
                 text = recognizer.recognize_google(audio).lower().strip()
-                self.log_message.emit(f"You said: {text}")
+                self.speech_detected.emit(text)
                 return text
-        except Exception as e:
-            self.log_message.emit(f"Error: {e}")
+        except Exception:
             return None
-    
+
     def listen_for_commands(self):
         global sleep_mode
         while not sleep_mode:
             command = self.transcribe_speech(timeout=10)
             if command:
-                self.log_message.emit(f"Processing command: {command}")
                 self.speech_detected.emit(command)
                 self.user_speaking.emit(False)
                 self.ai_speaking.emit(True)
                 response = self.process_command(command)
                 self.ai_response.emit(response)
-                self.log_message.emit(f"Joe AI: {response}")
                 self.user_speaking.emit(True)
                 self.ai_speaking.emit(False)
 
@@ -142,15 +137,11 @@ class VoiceListener(QThread):
                 messages=conversation_history + [{"role": "user", "content": intent_prompt}]
             )
             content = response['choices'][0]['message']['content'].strip()
-
-            # Make sure the content looks like JSON before parsing
             if not content.startswith("[") or "intent" not in content:
                 raise ValueError("Invalid intent structure")
-
             actions = json.loads(content)
-
         except Exception as e:
-            self.log_message.emit(f"Intent parsing failed, falling back to GPT: {e}")
+            print(f"Intent parsing failed: {e}")  
             return get_gpt_response(command)
 
         # Execute each action in order
@@ -181,7 +172,10 @@ class VoiceListener(QThread):
                 final_response += analyze_screen(value) + "\n"
 
             elif intent == "general_chat":
-                final_response += get_gpt_response(value) + "\n"
+                response_text = get_gpt_response(value, speak=False)
+                final_response += response_text + "\n"
+                self.ai_response.emit(response_text)
+
 
             elif intent == "generate_code":
                 final_response += generate_code_snippet(value) + "\n"
@@ -929,7 +923,7 @@ def edit_word_document(_, __, user_prompt):
     except Exception as e:
         return f"Edit failed: {str(e)}"
 
-def get_gpt_response(user_query):
+def get_gpt_response(user_query, speak=True):
     try:
         conversation_history.append({"role": "user", "content": user_query})
         response = openai.ChatCompletion.create(
@@ -939,12 +933,13 @@ def get_gpt_response(user_query):
         gpt_response = response['choices'][0]['message']['content']
         plain_text_response = clean_markdown(gpt_response)
 
-        # Add user's name if it exists
-        if USER_NAME:
+        # Only prepend name if not already in response
+        if USER_NAME and not plain_text_response.lower().startswith(USER_NAME.lower()):
             plain_text_response = f"{USER_NAME}, {plain_text_response}"
 
-        print(f"Joe AI: {plain_text_response}")
-        speak_text(plain_text_response)
+        if speak:
+            speak_text(plain_text_response)
+
         return plain_text_response
     except Exception as e:
         print(f"Error communicating with GPT: {e}")
@@ -953,40 +948,76 @@ def get_gpt_response(user_query):
 class JoeAIApp(QWidget):
     def __init__(self):
         super().__init__()
+        self.last_user_input = ""
+        self.last_ai_response = ""
+        self.status_phase = 0
+        self.current_status_base = "Listening"
+        self.setWindowIcon(QIcon("icon.png"))
         self.init_ui()
+
+        # Animation timer
+        self.status_timer = QTimer()
+        self.status_timer.timeout.connect(self.animate_status)
+
+        # Start voice listener
         self.listener_thread = VoiceListener()
-        self.listener_thread.speech_detected.connect(self.update_chat)
+        self.listener_thread.speech_detected.connect(self.show_user_input)
         self.listener_thread.user_speaking.connect(self.show_user_animation)
         self.listener_thread.ai_speaking.connect(self.show_ai_animation)
-        self.listener_thread.log_message.connect(self.update_chat)
-        self.listener_thread.ai_response.connect(self.update_chat)
+        self.listener_thread.ai_response.connect(self.show_ai_response)
         self.listener_thread.start()
 
     def init_ui(self):
         self.setWindowTitle("Joe AI")
-        self.setGeometry(100, 100, 600, 700)
+        self.setGeometry(300, 100, 600, 700)
+
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #1e1e1e;
+                color: #ffffff;
+                font-family: 'Segoe UI', sans-serif;
+            }
+            QLabel#titleLabel {
+                font-size: 24px;
+                font-weight: bold;
+                margin: 10px 0;
+            }
+            QLabel#statusLabel {
+                font-size: 20px;
+                font-weight: 600;
+                color: #00bfff;
+                padding: 20px;
+                qproperty-alignment: 'AlignCenter';
+            }
+            QTextEdit {
+                background-color: #252526;
+                border: 1px solid #3c3c3c;
+                padding: 10px;
+                font-size: 14px;
+                color: #ffffff;
+            }
+            QPushButton {
+                background-color: #0078d4;
+                color: white;
+                padding: 8px;
+                font-size: 13px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #005a9e;
+            }
+        """)
+
         self.layout = QVBoxLayout()
 
         self.chat_display = QTextEdit()
         self.chat_display.setReadOnly(True)
         self.layout.addWidget(self.chat_display)
 
-        self.animation_layout = QHBoxLayout()
-        self.user_animation = QLabel(self)
-        self.user_animation.setAlignment(Qt.AlignCenter)
-        self.animation_layout.addWidget(self.user_animation)
-        self.user_movie = QMovie("user_speaking.gif")
-        self.user_animation.setMovie(self.user_movie)
-        self.user_animation.setFixedSize(250, 250)
-        
-        self.ai_animation = QLabel(self)
-        self.ai_animation.setAlignment(Qt.AlignCenter)
-        self.animation_layout.addWidget(self.ai_animation)
-        self.ai_movie = QMovie("ai_speaking.gif")
-        self.ai_animation.setMovie(self.ai_movie)
-        self.ai_animation.setFixedSize(250, 250)
-
-        self.layout.addLayout(self.animation_layout)
+        self.status_label = QLabel("Waiting for command...", self)
+        self.status_label.setObjectName("statusLabel")
+        self.status_label.setAlignment(Qt.AlignCenter)
+        self.layout.addWidget(self.status_label)
 
         self.close_button = QPushButton("Close Window")
         self.close_button.clicked.connect(self.hide)
@@ -995,26 +1026,48 @@ class JoeAIApp(QWidget):
         self.setLayout(self.layout)
         self.tray_icon = SystemTrayApp(self)
 
-    def update_chat(self, text):
-        self.chat_display.append(text)
-        self.user_movie.stop()
-        self.ai_movie.stop()
+    def show_user_input(self, user_text):
+        if not user_text:
+            return
+        if user_text.strip() == self.last_user_input.strip():
+            return
+
+        self.last_user_input = user_text.strip()
+
+        if USER_NAME:
+            self.chat_display.append(f"<b>{USER_NAME}:</b> {user_text}")
+        else:
+            self.chat_display.append(f"<b>You:</b> {user_text}")
+
+    def show_ai_response(self, response_text):
+        if not response_text or response_text.strip() == self.last_ai_response.strip():
+            return
+        self.last_ai_response = response_text.strip()
+        self.chat_display.append(f"<b>Joe AI:</b> {response_text}")
+        self.status_label.setText("Listening...")
 
     def show_user_animation(self, status):
         if status:
-            self.user_movie.start()
-            self.ai_animation.hide()
+            self.current_status_base = "Listening"
+            self.status_phase = 0
+            self.status_timer.start(500)
         else:
-            self.user_movie.stop()
-            self.ai_animation.show()
+            self.status_timer.stop()
+            self.status_label.setText("Thinking...")
 
     def show_ai_animation(self, status):
         if status:
-            self.ai_movie.start()
-            self.user_animation.hide()
+            self.current_status_base = "Responding"
+            self.status_phase = 0
+            self.status_timer.start(500)
         else:
-            self.ai_movie.stop()
-            self.user_animation.show()
+            self.status_timer.stop()
+            self.status_label.setText("Listening...")
+
+    def animate_status(self):
+        dots = "." * (self.status_phase % 4)
+        self.status_label.setText(f"{self.current_status_base}{dots}")
+        self.status_phase += 1
 
 class SystemTrayApp(QSystemTrayIcon):
     def __init__(self, app):
@@ -1043,6 +1096,7 @@ class SystemTrayApp(QSystemTrayIcon):
     def icon_clicked(self, reason):
         if reason == QSystemTrayIcon.Trigger:
             self.show_app()
+
 
 if __name__ == "__main__":
     if USER_NAME:
