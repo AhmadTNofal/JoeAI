@@ -401,25 +401,58 @@ USER_NAME = get_user_name(USER_SERIAL)
 
 def say_text(text, rate, interrupted_flag):
     engine = pyttsx3.init()
+    voices = engine.getProperty("voices")
+    
+    # Pick male voice by name or gender match
+    for voice in voices:
+        if "male" in voice.name.lower() or "david" in voice.name.lower() or "mark" in voice.name.lower():
+            engine.setProperty("voice", voice.id)
+            break
+
     engine.setProperty("rate", rate)
+
     if USER_NAME:
         text = text.replace("Joe AI:", f"Joe AI: {USER_NAME},")
+
     engine.say(text)
     engine.runAndWait()
-    interrupted_flag.value = False  
+    interrupted_flag.value = False
 
 def say_text(text, rate, interrupted_flag):
     engine = pyttsx3.init()
+    voices = engine.getProperty("voices")
+    
+    # Pick male voice by name or gender match
+    for voice in voices:
+        if "male" in voice.name.lower() or "david" in voice.name.lower() or "mark" in voice.name.lower():
+            engine.setProperty("voice", voice.id)
+            break
+
     engine.setProperty("rate", rate)
+
     if USER_NAME:
         text = text.replace("Joe AI:", f"Joe AI: {USER_NAME},")
+
     engine.say(text)
     engine.runAndWait()
-    interrupted_flag.value = False  # finished normally
+    interrupted_flag.value = False
+
 
 def speak_text(text, rate=200):
     global sleep_mode
     interrupted = Value(ctypes.c_bool, False)
+
+    # Set up pyttsx3 with male voice
+    engine = pyttsx3.init()
+    voices = engine.getProperty("voices")
+
+    # Try to select a male voice
+    for voice in voices:
+        if "male" in voice.name.lower() or "david" in voice.name.lower():
+            engine.setProperty("voice", voice.id)
+            break
+
+    engine.setProperty("rate", rate)
 
     # Start TTS in separate process
     p = Process(target=say_text, args=(text, rate, interrupted))
