@@ -25,9 +25,12 @@ from microsoft_auth import get_access_token
 from todo_api import add_task, get_tasks, delete_task
 from email_api import create_email_draft
 import requests
+from multiprocessing import Process, Value
+import ctypes
 
 # OpenAI API key
 openai.api_key = "sk-tbtbdjXN0PNeKVX8x6oXJFABUkwYsEeOj9TinWn3jOT3BlbkFJuGto6skfATpazIFkDBnEr1JtKDe0ykgJkavseRQP0A"
+interrupt_flag = Value('b', False)
 
 # Initialize text-to-speech engine
 engine = pyttsx3.init()
@@ -396,13 +399,59 @@ def set_user_name(serial_number, name):
 USER_SERIAL = get_serial_number()
 USER_NAME = get_user_name(USER_SERIAL)
 
-def speak_text(text, rate=200):
-    """Convert text to speech with user's name if available."""
+def say_text(text, rate, interrupted_flag):
+    engine = pyttsx3.init()
     engine.setProperty("rate", rate)
     if USER_NAME:
         text = text.replace("Joe AI:", f"Joe AI: {USER_NAME},")
     engine.say(text)
     engine.runAndWait()
+    interrupted_flag.value = False  
+
+def say_text(text, rate, interrupted_flag):
+    engine = pyttsx3.init()
+    engine.setProperty("rate", rate)
+    if USER_NAME:
+        text = text.replace("Joe AI:", f"Joe AI: {USER_NAME},")
+    engine.say(text)
+    engine.runAndWait()
+    interrupted_flag.value = False  # finished normally
+
+def speak_text(text, rate=200):
+    global sleep_mode
+    interrupted = Value(ctypes.c_bool, False)
+
+    # Start TTS in separate process
+    p = Process(target=say_text, args=(text, rate, interrupted))
+    p.start()
+
+    # Start listening while speech is running
+    recognizer = sr.Recognizer()
+    with sr.Microphone() as source:
+        recognizer.adjust_for_ambient_noise(source, duration=0.5)
+        while p.is_alive():
+            try:
+                audio = recognizer.listen(source, timeout=1.5, phrase_time_limit=2)
+                said = recognizer.recognize_google(audio).lower().strip()
+                print("You said (during speech):", said)
+                if "okay joe" in said or "ok joe" in said:
+                    print("Joe interrupted!")
+                    p.terminate()
+                    p.join()
+                    sleep_mode = False
+
+                    engine = pyttsx3.init()
+                    engine.setProperty("rate", 200)
+                    engine.say("Yes, Listening.")
+                    engine.runAndWait()
+                    return
+            except (sr.WaitTimeoutError, sr.UnknownValueError):
+                continue
+            except Exception as e:
+                print(f"Error while listening: {e}")
+                break
+
+    p.join()
 
 def clean_markdown(text):
     """Removes Markdown symbols for clean speech output."""
