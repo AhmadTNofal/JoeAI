@@ -1,33 +1,53 @@
+# === Standard Library ===
 import os
+import sys
+import re
+import time
+import json
+import ctypes
+import urllib.parse
 import webbrowser
+from multiprocessing import Process, Value
+
+# === Third-Party Packages ===
 import openai
 import pyttsx3
 import pyautogui
 import pytesseract
-import speech_recognition as sr
 import psutil
-import time
-from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction, QTextEdit, QVBoxLayout, QWidget, QLabel, QPushButton, QHBoxLayout
-from PyQt5.QtGui import QIcon, QMovie
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtCore import QTimer
-import sys
-import re
+import requests
+import speech_recognition as sr
 import cv2
-import json
 import docx
-import urllib.parse
 import mysql.connector
 import wmi
+
+# === PyQt5 ===
+from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtGui import QIcon, QMovie
+from PyQt5.QtWidgets import (
+    QApplication,
+    QSystemTrayIcon,
+    QMenu,
+    QAction,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+    QLabel,
+    QPushButton,
+    QHBoxLayout,
+)
+
+# === Windows-Specific ===
 import win32gui
 import win32process
 import win32com.client
+
+# === Custom Modules ===
 from microsoft_auth import get_access_token
 from todo_api import add_task, get_tasks, delete_task
 from email_api import create_email_draft
-import requests
-from multiprocessing import Process, Value
-import ctypes
+
 
 # OpenAI API key
 openai.api_key = "sk-tbtbdjXN0PNeKVX8x6oXJFABUkwYsEeOj9TinWn3jOT3BlbkFJuGto6skfATpazIFkDBnEr1JtKDe0ykgJkavseRQP0A"
