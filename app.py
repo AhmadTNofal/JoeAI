@@ -24,7 +24,7 @@ import wmi
 
 # === PyQt5 ===
 from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
-from PyQt5.QtGui import QIcon, QMovie
+from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (
     QApplication,
     QSystemTrayIcon,
@@ -35,7 +35,6 @@ from PyQt5.QtWidgets import (
     QWidget,
     QLabel,
     QPushButton,
-    QHBoxLayout,
 )
 
 # === Windows-Specific ===
