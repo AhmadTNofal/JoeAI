@@ -719,7 +719,7 @@ def edit_word_document(_, __, user_prompt):
         best_doc.Range().Text = new_text
 
         # Ask for voice confirmation
-        speak_text("I made the changes. Do you want to keep them?")
+        speak_text("I made the changes. Do you want to keep them Give me a Yes or No answer Please?")
         confirmation = transcribe_speech(None, timeout=6, retries=1)
         if confirmation and "yes" in confirmation.lower():
             return "Changes applied to the document."
