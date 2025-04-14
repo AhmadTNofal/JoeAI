@@ -31,6 +31,7 @@ import ctypes
 
 # OpenAI API key
 openai.api_key = "sk-tbtbdjXN0PNeKVX8x6oXJFABUkwYsEeOj9TinWn3jOT3BlbkFJuGto6skfATpazIFkDBnEr1JtKDe0ykgJkavseRQP0A"
+
 interrupt_flag = Value('b', False)
 
 # Initialize text-to-speech engine
@@ -256,7 +257,7 @@ class VoiceListener(QThread):
                     # Create draft via Microsoft Graph
                     success, draft_id = create_email_draft(access_token, subject, body)
                     if success:
-                        # ✅ No reading email aloud — just redirect
+                        # No reading email aloud — just redirect
                         speak_text("Your draft email is ready.")
                         webbrowser.open(f"https://outlook.office.com/mail/drafts/id/{draft_id}")
                         return "Your email draft has been created and opened in Outlook."
