@@ -21,6 +21,7 @@ import cv2
 import docx
 import mysql.connector
 import wmi
+from dotenv import load_dotenv
 
 # === PyQt5 ===
 from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
@@ -47,9 +48,10 @@ from microsoft_auth import get_access_token
 from todo_api import add_task, get_tasks, delete_task
 from email_api import create_email_draft
 
+load_dotenv()
 
 # OpenAI API key
-openai.api_key = "sk-tbtbdjXN0PNeKVX8x6oXJFABUkwYsEeOj9TinWn3jOT3BlbkFJuGto6skfATpazIFkDBnEr1JtKDe0ykgJkavseRQP0A"
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 interrupt_flag = Value('b', False)
 
@@ -375,10 +377,10 @@ def get_serial_number():
 def get_user_name(serial_number):
     try:
         conn = mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="a1h2m3e4d5",
-            database="chatbot_user_identification"
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASSWORD"),
+            database=os.getenv("DB_NAME")
         )
         cursor = conn.cursor()
         cursor.execute("SELECT name FROM user_profiles WHERE serial_number = %s", (serial_number,))
@@ -393,11 +395,12 @@ def get_user_name(serial_number):
 def set_user_name(serial_number, name):
     try:
         conn = mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="a1h2m3e4d5",
-            database="chatbot_user_identification"
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASSWORD"),
+            database=os.getenv("DB_NAME")
         )
+        
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO user_profiles (serial_number, name) VALUES (%s, %s) "

@@ -11,3 +11,4 @@ mysql-connector-python
 wmi
 pyqt5
 pywin32
+python-dotenv
