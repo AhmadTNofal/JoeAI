@@ -1098,7 +1098,6 @@ class SystemTrayApp(QSystemTrayIcon):
         if reason == QSystemTrayIcon.Trigger:
             self.show_app()
 
-
 if __name__ == "__main__":
     if USER_NAME:
         print(f"Welcome back, {USER_NAME}!")
