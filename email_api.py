@@ -1,10 +1,14 @@
 import requests, webbrowser, http.server, urllib.parse
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # === Microsoft Azure App Registration Details ===
-client_id = "ce0c9aa4-6d58-4787-8dee-45285189899f"        # Application (client) ID from Azure
-client_secret = "TgJ8Q~ABdrKIHuWJ5x.ZR.96u53eJ5-vXugUoafQ"  # Secret generated for the app (keep this safe)
-redirect_uri = "http://localhost:8000"                     # Redirect URI used to capture the auth code locally
-scopes = ["Tasks.ReadWrite", "Mail.ReadWrite"]             # Permissions requested for Microsoft Graph API access
+client_id = os.getenv("CLIENT_ID")                          # Application (client) ID from Azure
+client_secret = os.getenv("CLIENT_SECRET")                  # Secret generated for the app (keep this safe)
+redirect_uri = os.getenv("REDIRECT_URI")                    # Redirect URI used to capture the auth code locally
+scopes = os.getenv("SCOPES").split()                        # Permissions requested for Microsoft Graph API access
 
 # === HTTP Server Handler to Capture Redirect with Auth Code ===
 class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):

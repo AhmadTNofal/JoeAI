@@ -1,10 +1,14 @@
 import requests, webbrowser, http.server, urllib.parse
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Microsoft application credentials (used for OAuth)
-client_id = "ce0c9aa4-6d58-4787-8dee-45285189899f"
-client_secret = "TgJ8Q~ABdrKIHuWJ5x.ZR.96u53eJ5-vXugUoafQ"  
-redirect_uri = "http://localhost:8000"  # Local redirect for receiving auth code
-scopes = ["Tasks.ReadWrite", "Mail.ReadWrite"]  # Permissions for Microsoft To Do and Outlook
+client_id = os.getenv("CLIENT_ID")
+client_secret = os.getenv("CLIENT_SECRET")
+redirect_uri = os.getenv("REDIRECT_URI")
+scopes = os.getenv("SCOPES").split()  # Space-separated list from .env
 
 # Custom HTTP handler for OAuth callback to capture authorization code
 class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
