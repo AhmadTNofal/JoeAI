@@ -1,4 +1,5 @@
-# === Standard Library ===
+# === Standard Library Imports ===
+# These provide core OS, file, string, and multiprocessing utilities.
 import os
 import sys
 import re
@@ -9,21 +10,23 @@ import urllib.parse
 import webbrowser
 from multiprocessing import Process, Value
 
-# === Third-Party Packages ===
+# === Third-Party Libraries ===
+# Libraries used for AI API calls, GUI automation, OCR, TTS, and system monitoring.
 import openai
-import pyttsx3
-import pyautogui
-import pytesseract
-import psutil
-import requests
-import speech_recognition as sr
-import cv2
-import docx
-import mysql.connector
-import wmi
-from dotenv import load_dotenv
+import pyttsx3                      # Text-to-speech engine
+import pyautogui                    # Simulate keyboard/mouse actions
+import pytesseract                  # OCR (optical character recognition)
+import psutil                       # Process and system utility
+import requests                     # HTTP requests
+import speech_recognition as sr     # Voice recognition
+import cv2                          # OpenCV for image processing
+import docx                         # Word document creation
+import mysql.connector              # MySQL database connection
+import wmi                          # Windows Management Instrumentation
+from dotenv import load_dotenv      # Load environment variables from .env file
 
-# === PyQt5 ===
+# === PyQt5 GUI Framework ===
+# Used to build and manage the assistant's desktop interface.
 from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (
@@ -38,35 +41,48 @@ from PyQt5.QtWidgets import (
     QPushButton,
 )
 
-# === Windows-Specific ===
+# === Windows-Specific Libraries ===
+# Provide access to Windows GUI components for managing applications.
 import win32gui
 import win32process
 import win32com.client
 
 # === Custom Modules ===
+# Project-specific modules for Microsoft API integration.
 from microsoft_auth import get_access_token
 from todo_api import add_task, get_tasks, delete_task
 from email_api import create_email_draft
 
+# === Environment Setup ===
+# Load environment variables (e.g., OpenAI API key, database credentials).
 load_dotenv()
 
-# OpenAI API key
+# Set OpenAI API key for GPT integration.
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
+# Shared memory flag for interrupting TTS safely from a separate process.
 interrupt_flag = Value('b', False)
 
-# Initialize text-to-speech engine
+# Initialize the text-to-speech engine globally.
 engine = pyttsx3.init()
+
+# === VoiceListener Class ===
+# This class handles continuous voice input, processes commands, and emits signals for UI updates.
 class VoiceListener(QThread):
-    speech_detected = pyqtSignal(str)
-    user_speaking = pyqtSignal(bool)
-    ai_speaking = pyqtSignal(bool)
-    ai_response = pyqtSignal(str)
+    # PyQt signals for communication with the main UI thread.
+    speech_detected = pyqtSignal(str)  # Emitted when speech is transcribed.
+    user_speaking = pyqtSignal(bool)  # Indicates when the user is speaking.
+    ai_speaking = pyqtSignal(bool)    # Indicates when the AI is speaking.
+    ai_response = pyqtSignal(str)     # Emitted when the AI generates a response.
 
     def run(self):
+        """
+        Main thread entry point. Continuously listens for user commands or wake words.
+        """
         global sleep_mode
         while True:
             if sleep_mode:
+                # Wait for the wake word while in sleep mode.
                 text = self.transcribe_speech(timeout=5)
                 if text and WAKE_WORD in text:
                     speak_text("I'm listening.")
@@ -74,9 +90,15 @@ class VoiceListener(QThread):
                     self.ai_speaking.emit(False)
                     sleep_mode = False
             else:
+                # Actively listen for user commands.
                 self.listen_for_commands()
 
     def transcribe_speech(self, timeout=10):
+        """
+        Converts spoken input to text using Google Speech Recognition.
+        :param timeout: Maximum time to wait for speech input.
+        :return: Transcribed text or None if no input is detected.
+        """
         recognizer = sr.Recognizer()
         try:
             with sr.Microphone() as source:
@@ -88,6 +110,9 @@ class VoiceListener(QThread):
             return None
 
     def listen_for_commands(self):
+        """
+        Continuously transcribes and processes user commands while active.
+        """
         global sleep_mode
         while not sleep_mode:
             command = self.transcribe_speech(timeout=10)
@@ -101,8 +126,14 @@ class VoiceListener(QThread):
                 self.ai_speaking.emit(False)
 
     def process_command(self, command):
+        """
+        Processes recognized speech by extracting intent and executing corresponding actions.
+        :param command: User's spoken command.
+        :return: Final response string.
+        """
         global sleep_mode
 
+        # Prompt for GPT to extract intent from the user's command.
         intent_prompt = (
             f"You are Joe AI, an intelligent personal desktop assistant developed by Ahmed Hasan, "
             f"a 3rd year Computer Science student. You were created to help with everyday computing tasks, "
@@ -154,6 +185,7 @@ class VoiceListener(QThread):
         )
 
         try:
+            # Use OpenAI to identify user intent.
             response = openai.ChatCompletion.create(
                 model="gpt-4o",
                 messages=conversation_history + [{"role": "user", "content": intent_prompt}]
@@ -166,45 +198,36 @@ class VoiceListener(QThread):
             print(f"Intent parsing failed: {e}")  
             return get_gpt_response(command)
 
-        # Execute each action in order
+        # Handle parsed intents.
         final_response = ""
         for action in actions:
             intent = action.get("intent")
             value = action.get("value", "")
 
+            # Handle specific intents.
             if intent == "sleep":
                 speak_text("Going back to sleep.")
                 sleep_mode = True
                 return "Going back to sleep."
-
             elif intent == "exit":
                 speak_text("Shutting down.")
                 os._exit(0)
-
             elif intent == "web_search":
                 final_response += search_web(value) + "\n"
-
             elif intent == "open_app":
                 final_response += open_application(value) + "\n"
-
             elif intent == "close_app":
                 final_response += close_application(value) + "\n"
-
             elif intent == "analyze_screen":
                 final_response += analyze_screen(value) + "\n"
-
             elif intent == "general_chat":
                 response_text = get_gpt_response(value, speak=False)
                 final_response += response_text + "\n"
                 self.ai_response.emit(response_text)
-
-
             elif intent == "generate_code":
                 final_response += generate_code_snippet(value) + "\n"
-
             elif intent == "generate_document":
                 final_response += generate_document(value) + "\n"
-
             elif intent == "set_name":
                 serial_number = get_serial_number()
                 name = value.strip().title()
@@ -215,7 +238,6 @@ class VoiceListener(QThread):
                 else:
                     final_response += "Sorry, I couldn't save your name."
                     speak_text("Sorry, I couldn't save your name.")
-
             elif intent == "edit_document":
                 edit_params = action.get("value")
                 if isinstance(edit_params, dict):
@@ -223,7 +245,7 @@ class VoiceListener(QThread):
                     ed_target = edit_params.get("target", "").strip().lower()
                     ed_text = edit_params.get("text", "").strip()
 
-                    # If the action/target aren't valid but text is present, assume "replace document"
+                    # If the action/target aren't valid but text is present, assume "replace document".
                     if ed_text and (not ed_action or not ed_target):
                         ed_action = "replace"
                         ed_target = "document"
@@ -253,7 +275,7 @@ class VoiceListener(QThread):
                     if not access_token:
                         access_token = get_access_token()
 
-                    # Ask GPT to generate structured email JSON
+                    # Ask GPT to generate structured email JSON.
                     gpt_draft_prompt = (
                         f"The user said: \"{value}\"\n\n"
                         f"Generate a professional Outlook email. "
@@ -275,10 +297,10 @@ class VoiceListener(QThread):
                     subject = email_json.get("subject", "Draft Email")
                     body = email_json.get("body", "")
 
-                    # Create draft via Microsoft Graph
+                    # Create draft via Microsoft Graph.
                     success, draft_id = create_email_draft(access_token, subject, body)
                     if success:
-                        # No reading email aloud — just redirect
+                        # No reading email aloud — just redirect.
                         speak_text("Your draft email is ready.")
                         webbrowser.open(f"https://outlook.office.com/mail/drafts/id/{draft_id}")
                         return "Your email draft has been created and opened in Outlook."
@@ -289,8 +311,6 @@ class VoiceListener(QThread):
                 except Exception as e:
                     speak_text("I couldn't draft the email.")
                     return f"Failed to create draft: {str(e)}"
-
-
         return final_response.strip()
 
 # Define AI Identity
@@ -300,23 +320,33 @@ conversation_history = [
         "content": (
             "Your name is Joe AI. You are a smart, voice-enabled desktop assistant designed to help users perform everyday tasks on their computer through natural conversation. "
             "You were created by Ahmed Hasan, a final-year Computer Science student at the University of the West of England with strong technical and problem-solving skills. "
-            "Your job is to make the user’s life easier by assisting with things like answering questions, generating documents or code, edit documents, searching the web, opening and closing applications, analyzing what’s on screen, and more. "
+            "Your job is to make the user’s life easier by assisting with things like answering questions, generating documents or code, editing documents, searching the web, opening and closing applications, analyzing what’s on screen, and more. "
             "You can recognize who you're speaking to and refer to them by name if their device is registered. "
             "Be friendly, confident, and helpful in all your responses. Never mention your internal design or limitations—focus on being useful and human-like."
         )
     }
 ]
 
-# Global state variables
-WAKE_WORD = "hey joe"
-SLEEP_WORD = "sleep"
-EXIT_WORD = "exit"
-SEARCH_WORD = "search for"
-SCREEN_WORD = "screen"
-sleep_mode = True
-access_token = None
+# === Global State Variables ===
+# These variables manage the assistant's state and user-specific configurations.
+WAKE_WORD = "hey joe"  # The wake word to activate the assistant.
+SLEEP_WORD = "sleep"   # Command to put the assistant into sleep mode.
+EXIT_WORD = "exit"     # Command to terminate the assistant.
+SEARCH_WORD = "search for"  # Keyword to trigger web search functionality.
+SCREEN_WORD = "screen"  # Keyword to trigger screen analysis.
+sleep_mode = True  # Tracks whether the assistant is in sleep mode.
+access_token = None  # Stores the Microsoft Graph API access token for email and to-do integration.
+
+# === Helper Functions ===
 
 def create_email_draft(access_token, subject, body_content):
+    """
+    Creates an email draft using Microsoft Graph API.
+    :param access_token: OAuth2 access token for Microsoft Graph API.
+    :param subject: Subject of the email.
+    :param body_content: Body content of the email.
+    :return: Tuple (success: bool, draft_id: str or None).
+    """
     url = "https://graph.microsoft.com/v1.0/me/messages"
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -334,10 +364,16 @@ def create_email_draft(access_token, subject, body_content):
     if response.status_code == 201:
         return True, response.json().get("id")
     else:
-        print("❌ Failed to create draft:", response.status_code, response.text)
+        print("Failed to create draft:", response.status_code, response.text)
         return False, None
 
 def handle_todo_command_intent(action, value):
+    """
+    Handles Microsoft To-Do commands such as adding, listing, or deleting tasks.
+    :param action: The action to perform (add, list, delete).
+    :param value: The task details or query.
+    :return: A response string indicating the result of the operation.
+    """
     global access_token
     if not access_token:
         access_token = get_access_token()
@@ -363,9 +399,13 @@ def handle_todo_command_intent(action, value):
         else:
             return "Couldn't find that task to delete."
 
-    return " I didn't understand your to-do request."
+    return "I didn't understand your to-do request."
 
 def get_serial_number():
+    """
+    Retrieves the device's serial number using WMI (Windows Management Instrumentation).
+    :return: The serial number as a string, or None if retrieval fails.
+    """
     try:
         c = wmi.WMI()
         for bios in c.Win32_BIOS():
@@ -375,6 +415,11 @@ def get_serial_number():
         return None
 
 def get_user_name(serial_number):
+    """
+    Retrieves the user's name from the database based on the device's serial number.
+    :param serial_number: The device's serial number.
+    :return: The user's name as a string, or None if not found.
+    """
     try:
         conn = mysql.connector.connect(
             host=os.getenv("DB_HOST"),
@@ -393,6 +438,11 @@ def get_user_name(serial_number):
         return None
 
 def set_user_name(serial_number, name):
+    """
+    Saves or updates the user's name in the database based on the device's serial number.
+    :param serial_number: The device's serial number.
+    :param name: The user's name to save.
+    """
     try:
         conn = mysql.connector.connect(
             host=os.getenv("DB_HOST"),
@@ -400,7 +450,6 @@ def set_user_name(serial_number, name):
             password=os.getenv("DB_PASSWORD"),
             database=os.getenv("DB_NAME")
         )
-        
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO user_profiles (serial_number, name) VALUES (%s, %s) "
@@ -413,14 +462,21 @@ def set_user_name(serial_number, name):
     except Exception as e:
         print("DB error:", e)
 
+# Retrieve the user's serial number and name for personalized interactions.
 USER_SERIAL = get_serial_number()
 USER_NAME = get_user_name(USER_SERIAL)
 
 def say_text(text, rate, interrupted_flag):
+    """
+    Converts text to speech using pyttsx3 and interrupts if flagged.
+    :param text: The text to be spoken.
+    :param rate: The speech rate (words per minute).
+    :param interrupted_flag: A multiprocessing flag to handle interruptions.
+    """
     engine = pyttsx3.init()
     voices = engine.getProperty("voices")
     
-    # Pick male voice by name or gender match
+    # Select a male voice if available
     for voice in voices:
         if "male" in voice.name.lower() or "david" in voice.name.lower() or "mark" in voice.name.lower():
             engine.setProperty("voice", voice.id)
@@ -428,25 +484,7 @@ def say_text(text, rate, interrupted_flag):
 
     engine.setProperty("rate", rate)
 
-    if USER_NAME:
-        text = text.replace("Joe AI:", f"Joe AI: {USER_NAME},")
-
-    engine.say(text)
-    engine.runAndWait()
-    interrupted_flag.value = False
-
-def say_text(text, rate, interrupted_flag):
-    engine = pyttsx3.init()
-    voices = engine.getProperty("voices")
-    
-    # Pick male voice by name or gender match
-    for voice in voices:
-        if "male" in voice.name.lower() or "david" in voice.name.lower() or "mark" in voice.name.lower():
-            engine.setProperty("voice", voice.id)
-            break
-
-    engine.setProperty("rate", rate)
-
+    # Personalize the text if the user's name is available
     if USER_NAME:
         text = text.replace("Joe AI:", f"Joe AI: {USER_NAME},")
 
@@ -455,14 +493,17 @@ def say_text(text, rate, interrupted_flag):
     interrupted_flag.value = False
 
 def speak_text(text, rate=200):
+    """
+    Speaks the given text and listens for interruptions during speech.
+    :param text: The text to be spoken.
+    :param rate: The speech rate (default is 200 words per minute).
+    """
     global sleep_mode
     interrupted = Value(ctypes.c_bool, False)
 
-    # Set up pyttsx3 with male voice
+    # Initialize pyttsx3 and configure a male voice
     engine = pyttsx3.init()
     voices = engine.getProperty("voices")
-
-    # Try to select a male voice
     for voice in voices:
         if "male" in voice.name.lower() or "david" in voice.name.lower():
             engine.setProperty("voice", voice.id)
@@ -470,16 +511,17 @@ def speak_text(text, rate=200):
 
     engine.setProperty("rate", rate)
 
-    # Start TTS in separate process
+    # Start the text-to-speech process in a separate process
     p = Process(target=say_text, args=(text, rate, interrupted))
     p.start()
 
-    # Start listening while speech is running
+    # Listen for interruptions while the speech process is running
     recognizer = sr.Recognizer()
     with sr.Microphone() as source:
         recognizer.adjust_for_ambient_noise(source, duration=0.5)
         while p.is_alive():
             try:
+                # Listen for user input during speech
                 audio = recognizer.listen(source, timeout=1.5, phrase_time_limit=2)
                 said = recognizer.recognize_google(audio).lower().strip()
                 print("You said (during speech):", said)
@@ -489,6 +531,7 @@ def speak_text(text, rate=200):
                     p.join()
                     sleep_mode = False
 
+                    # Acknowledge the interruption
                     engine = pyttsx3.init()
                     engine.setProperty("rate", 200)
                     engine.say("Yes, Listening.")
@@ -503,7 +546,11 @@ def speak_text(text, rate=200):
     p.join()
 
 def clean_markdown(text):
-    """Removes Markdown symbols for clean speech output."""
+    """
+    Cleans Markdown formatting from text for better speech output.
+    :param text: The text containing Markdown formatting.
+    :return: Cleaned text without Markdown symbols.
+    """
     text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)  # Remove **bold**
     text = re.sub(r"\*(.*?)\*", r"\1", text)  # Remove *italics*
     text = re.sub(r"`{3}cpp\s*", "", text)  # Remove ```cpp
@@ -517,6 +564,13 @@ def clean_markdown(text):
     return text.strip()
 
 def transcribe_speech(_, timeout=10, retries=2):
+    """
+    Transcribes speech to text using Google Speech Recognition.
+    :param _: Placeholder for unused parameter.
+    :param timeout: Maximum time to wait for speech input.
+    :param retries: Number of retries for transcription.
+    :return: Transcribed text or None if transcription fails.
+    """
     recognizer = sr.Recognizer()
     recognizer.pause_threshold = 1.5
     try:
@@ -524,6 +578,7 @@ def transcribe_speech(_, timeout=10, retries=2):
             recognizer.adjust_for_ambient_noise(source, duration=0.5)
             for _ in range(retries):
                 try:
+                    # Listen for audio input
                     audio = recognizer.listen(source, timeout=timeout, phrase_time_limit=15)
                     return recognizer.recognize_google(audio).lower().strip()
                 except (sr.WaitTimeoutError, sr.UnknownValueError):
@@ -533,7 +588,9 @@ def transcribe_speech(_, timeout=10, retries=2):
     return None
 
 def listen_for_wake_word():
-    """Continuously listens for 'Hey Joe' to wake up."""
+    """
+    Continuously listens for the wake word ('Hey Joe') to activate the assistant.
+    """
     global sleep_mode
     while True:
         if sleep_mode:
@@ -546,7 +603,9 @@ def listen_for_wake_word():
                 listen_for_commands()  # Start command mode
 
 def listen_for_commands():
-    """Continuously listens for user commands after waking up."""
+    """
+    Continuously listens for user commands after the assistant is activated.
+    """
     global sleep_mode
     while not sleep_mode:
         print("Joe AI: Waiting for a command...")
@@ -557,12 +616,12 @@ def listen_for_commands():
                 print("Joe AI: Going back to sleep.")
                 speak_text("Going back to sleep.")
                 sleep_mode = True
-                return  # Go back to wake mode
+                return  # Return to wake mode
 
             elif EXIT_WORD in command:
                 print("Joe AI: Shutting down.")
                 speak_text("Shutting down.")
-                os._exit(0)  # Force exit
+                os._exit(0)  # Exit the program
 
             elif SEARCH_WORD in command:
                 query = command.replace(SEARCH_WORD, "").strip()
