@@ -1,14 +1,31 @@
+# === Core AI and Assistant Features ===
 openai
+python-dotenv
+requests
 pyttsx3
 pyautogui
 pytesseract
 speechrecognition
 psutil
-requests
-opencv-python
-python-docx
-mysql-connector-python
-wmi
+
+# === GUI and UI ===
 pyqt5
 pywin32
-python-dotenv
+
+# === Automation and OCR ===
+pyautogui
+opencv-python
+pytesseract
+
+# === Word Document Handling ===
+python-docx
+
+# === MySQL & System Info ===
+mysql-connector-python
+wmi
+
+# === Optional but Helpful ===
+pyqt5-tools  # For Qt Designer, optional but useful during development
+
+# === System-Level Compatibility (required for pyautogui) ===
+pillow         # Screenshot support used by pyautogui
