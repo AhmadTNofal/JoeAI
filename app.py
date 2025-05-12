@@ -221,7 +221,7 @@ class VoiceListener(QThread):
             elif intent == "analyze_screen":
                 final_response += analyze_screen(value) + "\n"
             elif intent == "general_chat":
-                response_text = get_gpt_response(value, speak=False)
+                response_text = get_gpt_response(value, speak=True)
                 final_response += response_text + "\n"
                 self.ai_response.emit(response_text)
             elif intent == "generate_code":
